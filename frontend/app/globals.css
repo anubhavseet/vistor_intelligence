@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+/* Leaflet map styles */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+
+/* Form input styles - ensure text is always visible */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+textarea,
+select {
+  color: #111827 !important; /* text-gray-900 */
+  background-color: #ffffff !important;
+}
+
+input::placeholder {
+  color: #9ca3af !important; /* text-gray-400 */
+}
+
+input:focus {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+}

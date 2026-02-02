@@ -1,0 +1,99 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+
+@Injectable()
+export class GeminiService {
+    private readonly logger = new Logger(GeminiService.name);
+    private genAI: GoogleGenerativeAI;
+    private model: GenerativeModel;
+    private embeddingModel: GenerativeModel;
+
+    constructor(private configService: ConfigService) {
+        const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+        if (!apiKey) {
+            this.logger.warn('GEMINI_API_KEY not found in environment variables');
+        }
+
+        this.genAI = new GoogleGenerativeAI(apiKey || 'dummy_key');
+        this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        this.embeddingModel = this.genAI.getGenerativeModel({ model: 'embedding-001' });
+    }
+
+    async generateEmbedding(text: string): Promise<number[]> {
+        try {
+            const result = await this.embeddingModel.embedContent(text);
+            const embedding = result.embedding;
+            return embedding.values;
+        } catch (error) {
+            this.logger.error('Error generating embedding', error);
+            throw error;
+        }
+    }
+
+    async generateUiDescription(htmlSnippet: string): Promise<string> {
+        const prompt = `
+      Analyze the following HTML snippet and describe its semantic purpose and visual style (colors, fonts, structure) strictly in 2-3 sentences.
+      HTML:
+      ${htmlSnippet}
+    `;
+
+        try {
+            const result = await this.model.generateContent(prompt);
+            const response = await result.response;
+            return response.text();
+        } catch (error) {
+            this.logger.error('Error generating UI description', error);
+            return 'Unknown section';
+        }
+    }
+
+    async generateUiElement(
+        userIntent: string,
+        siteContextHtml: string,
+        siteDesignDescription: string
+    ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string }> {
+
+        const prompt = `
+      You are an expert Frontend Developer and UX Designer.
+      
+      Context:
+      User Intent: "${userIntent}"
+      Current Page Section Context (HTML): "${siteContextHtml.substring(0, 1000)}..."
+      Site Design/Style: "${siteDesignDescription}"
+
+      Task:
+      Generate a responsive, beautiful UI element (HTML and CSS) to address the user's intent. 
+      The UI should match the site's existing design pattern (glassmorphism, vibrant colors if applicable, or safe corporate style depending on context).
+      The element should be an overlay, modal, or specific section injection. And It should be responsive and beautiful and should have an closeing optin so that the user 
+      can close the element. The element should be closed when the user clicks on the close button.The UI should not block the website , And thw close button should always have 
+      vi-internal-close this class ,, Always generate a relevent and correct UI
+
+      Return ONLY a JSON object with the following structure (no markdown, no extra text):
+      {
+        "injection_target_selector": "The CSS selector where this element should be appended (e.g., 'body', '#pricing', '.hero-section')",
+        "html_payload": "The raw HTML of the component. Use a unique ID for the container.",
+        "scoped_css": "The CSS styles for the component. Scope them to the unique ID to prevent leakage."
+      }
+    `;
+
+        try {
+            const result = await this.model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+
+            // Clean up markdown code blocks if present
+            const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            console.log(jsonString);
+            return JSON.parse(jsonString);
+        } catch (error) {
+            this.logger.error('Error generating UI element', error);
+            // Fallback
+            return {
+                injection_target_selector: 'body',
+                html_payload: '<div id="ai-fallback" style="position:fixed;bottom:20px;right:20px;padding:20px;background:white;box-shadow:0 4px 12px rgba(0,0,0,0.1);border-radius:8px;">How can we help you?</div>',
+                scoped_css: '#ai-fallback { z-index: 9999; font-family: sans-serif; }'
+            };
+        }
+    }
+}
