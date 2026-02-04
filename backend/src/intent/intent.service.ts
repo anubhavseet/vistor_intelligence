@@ -153,7 +153,7 @@ export class IntentService {
       }
       // If Bouncer, do nothing (null)
     } else {
-      if (score > 10) suggestedAction = 'user_is_a_bouncer_get_his_attention'
+      if (score > 10) suggestedAction = 'priority_support_chat'
       if (score > 80) suggestedAction = 'priority_support_chat';
       else if (score > 50) suggestedAction = 'lure_custoumers_to_contact_Us_with_discount_or_offer';
     }

@@ -15,6 +15,7 @@ import { EnrichmentModule } from './enrichment/enrichment.module';
 import { IntentModule } from './intent/intent.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { HealthModule } from './health/health.module';
+import { CrawlerModule } from './crawler/crawler.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { HealthModule } from './health/health.module';
     IntentModule,
     WebhooksModule,
     HealthModule,
+    CrawlerModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

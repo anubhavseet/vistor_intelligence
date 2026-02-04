@@ -1,88 +1,169 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { chromium, Browser, Page } from 'playwright';
-import { GeminiService } from '../ai-generation/gemini.service';
-import { QdrantService } from '../qdrant/qdrant.service';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import { InjectModel } from '@nestjs/mongoose';
+import { Queue } from 'bull';
+import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { CrawlJob, CrawlJobDocument, CrawlJobStatus } from '../common/schemas/crawl-job.schema';
+import { StartCrawlInput } from './dto/start-crawl.input';
+import { CrawlJobStatus as CrawlStatusType } from './dto/crawl-status.type';
 
 @Injectable()
 export class CrawlerService {
     private readonly logger = new Logger(CrawlerService.name);
 
     constructor(
-        private geminiService: GeminiService,
-        private qdrantService: QdrantService,
+        @InjectQueue('website-crawler') private crawlQueue: Queue,
+        @InjectModel(CrawlJob.name) private crawlJobModel: Model<CrawlJobDocument>,
     ) { }
 
-    async crawlAndIndex(url: string, siteId: string) {
-        this.logger.log(`Starting crawl for ${url}`);
+    /**
+     * Start a new website crawl job
+     */
+    async startCrawl(input: StartCrawlInput): Promise<CrawlJob> {
+        const jobId = `crawl_${uuidv4()}`;
 
-        let browser: Browser;
-        try {
-            browser = await chromium.launch();
-            const page = await browser.newPage();
-            await page.goto(url, { waitUntil: 'networkidle' });
+        this.logger.log(`Creating new crawl job ${jobId} for ${input.startUrl}`);
 
-            // Extract meaningful sections
-            // Logic: get sections, articles, or divs with IDs that contain significant text
-            const elements = await page.evaluate(() => {
-                const candidates = Array.from(document.querySelectorAll('section, article, div[id], main'));
+        // Create job record in database
+        const crawlJob = await this.crawlJobModel.create({
+            jobId,
+            siteId: input.siteId,
+            startUrl: input.startUrl,
+            status: CrawlJobStatus.PENDING,
+            maxPages: input.maxPages || 50,
+            maxDepth: input.maxDepth || 3,
+            sameDomainOnly: input.sameDomainOnly !== false,
+            pagesDiscovered: 0,
+            pagesCrawled: 0,
+            pagesFailed: 0,
+            urlsQueued: [input.startUrl],
+            urlsCrawled: [],
+        });
 
-                return candidates.map(el => {
-                    // simple cleaning
-                    const text = (el as HTMLElement).innerText.trim();
-                    if (text.length < 50) return null; // skip small chunks
+        // Add job to BullMQ queue (non-blocking)
+        await this.crawlQueue.add('crawl-website', {
+            jobId,
+            siteId: input.siteId,
+            startUrl: input.startUrl,
+            maxPages: input.maxPages || 50,
+            maxDepth: input.maxDepth || 3,
+            sameDomainOnly: input.sameDomainOnly !== false,
+        }, {
+            jobId,
+            attempts: 3,
+            backoff: {
+                type: 'exponential',
+                delay: 5000,
+            },
+            removeOnComplete: false,
+            removeOnFail: false,
+        });
 
-                    let selector = el.tagName.toLowerCase();
-                    if (el.id) selector += `#${el.id}`;
-                    else if (el.className) selector += `.${el.className.split(' ').join('.')}`;
+        this.logger.log(`Crawl job ${jobId} queued successfully`);
 
-                    return {
-                        tagName: el.tagName.toLowerCase(),
-                        id: el.id,
-                        className: el.className,
-                        selector: selector,
-                        html: el.outerHTML,
-                        text: text,
-                    };
-                }).filter(Boolean);
-            });
+        return crawlJob;
+    }
 
-            this.logger.log(`Found ${elements.length} chunks on ${url}`);
+    /**
+     * Get crawl job status by jobId
+     */
+    async getCrawlStatus(jobId: string): Promise<CrawlJob> {
+        const job = await this.crawlJobModel.findOne({ jobId });
 
-            // Process in batches or sequence
-            for (const chunk of elements) {
-                if (!chunk) continue;
-
-                try {
-                    // 1. Generate Description
-                    const description = await this.geminiService.generateUiDescription(chunk.html.substring(0, 1000));
-
-                    // 2. Generate Embedding (use text content + description for better semantic match)
-                    const embeddingText = `Context: ${chunk.selector}. Content: ${chunk.text.substring(0, 500)}. Description: ${description}`;
-                    const embedding = await this.geminiService.generateEmbedding(embeddingText);
-
-                    // 3. Upsert to Qdrant
-                    const pointId = uuidv4();
-                    await this.qdrantService.upsertPoint(pointId, embedding, {
-                        url: url,
-                        selector: chunk.selector,
-                        raw_html: chunk.html, // Watch out for limits, maybe truncate if massive
-                        description: description,
-                        siteId: siteId
-                    });
-
-                } catch (err) {
-                    this.logger.error(`Error processing chunk ${chunk.selector}`, err);
-                }
-            }
-
-            this.logger.log(`Finished crawling ${url}`);
-
-        } catch (error) {
-            this.logger.error(`Crawling failed for ${url}`, error);
-            throw error;
-        } finally {
-            if (browser) await browser.close();
+        if (!job) {
+            throw new NotFoundException(`Crawl job ${jobId} not found`);
         }
+
+        return job;
+    }
+
+    /**
+     * Get all crawl jobs for a site
+     */
+    async getCrawlJobsBySite(siteId: string): Promise<CrawlJob[]> {
+        return this.crawlJobModel
+            .find({ siteId })
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .exec();
+    }
+
+    /**
+     * Get active/pending crawl jobs for a site
+     */
+    async getActiveCrawlJobs(siteId: string): Promise<CrawlJob[]> {
+        return this.crawlJobModel
+            .find({
+                siteId,
+                status: { $in: [CrawlJobStatus.PENDING, CrawlJobStatus.IN_PROGRESS] },
+            })
+            .sort({ createdAt: -1 })
+            .exec();
+    }
+
+    /**
+     * Cancel a crawl job
+     */
+    async cancelCrawl(jobId: string): Promise<boolean> {
+        // Remove from queue
+        const bullJob = await this.crawlQueue.getJob(jobId);
+        if (bullJob) {
+            await bullJob.remove();
+        }
+
+        // Update database record
+        await this.crawlJobModel.findOneAndUpdate(
+            { jobId },
+            {
+                status: CrawlJobStatus.FAILED,
+                error: 'Cancelled by user',
+                completedAt: new Date(),
+            },
+        );
+
+        this.logger.log(`Crawl job ${jobId} cancelled`);
+
+        return true;
+    }
+
+    /**
+     * Retry a failed crawl job
+     */
+    async retryCrawl(jobId: string): Promise<CrawlJob> {
+        const existingJob = await this.getCrawlStatus(jobId);
+
+        if (existingJob.status !== CrawlJobStatus.FAILED) {
+            throw new Error('Can only retry failed jobs');
+        }
+
+        // Create new job with same parameters
+        return this.startCrawl({
+            siteId: existingJob.siteId,
+            startUrl: existingJob.startUrl,
+            maxPages: existingJob.maxPages,
+            maxDepth: existingJob.maxDepth,
+            sameDomainOnly: existingJob.sameDomainOnly,
+        });
+    }
+
+    /**
+     * Get queue statistics
+     */
+    async getQueueStats() {
+        const [waiting, active, completed, failed] = await Promise.all([
+            this.crawlQueue.getWaitingCount(),
+            this.crawlQueue.getActiveCount(),
+            this.crawlQueue.getCompletedCount(),
+            this.crawlQueue.getFailedCount(),
+        ]);
+
+        return {
+            waiting,
+            active,
+            completed,
+            failed,
+            total: waiting + active,
+        };
     }
 }

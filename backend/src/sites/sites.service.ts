@@ -43,13 +43,46 @@ export class SitesService {
     return !!site;
   }
 
-  async updateSite(userId: string, siteId: string, updates: Partial<Site>): Promise<Site> {
+  async updateSite(userId: string, siteId: string, updates: any): Promise<Site> {
     const site = await this.getSiteBySiteId(siteId);
-    if (site.userId !== userId) {
+    if (String(site.userId) !== String(userId)) {
       throw new ForbiddenException('Not authorized to update this site');
     }
 
+    // Handle settings update separately to merge properly
+    if (updates.settings) {
+      site.settings = {
+        ...site.settings,
+        ...updates.settings,
+      };
+      delete updates.settings;
+    }
+
+    // Apply other updates
     Object.assign(site, updates);
+    await site.save();
+    return site;
+  }
+
+  async deleteSite(userId: string, siteId: string): Promise<void> {
+    const site = await this.getSiteBySiteId(siteId);
+    if (String(site.userId) !== String(userId)) {
+      throw new ForbiddenException('Not authorized to delete this site');
+    }
+
+    // Soft delete by setting isActive to false
+    site.isActive = false;
+    await site.save();
+  }
+
+  async regenerateApiKey(userId: string, siteId: string): Promise<Site> {
+    const site = await this.getSiteBySiteId(siteId);
+    if (String(site.userId) !== String(userId)) {
+      throw new ForbiddenException('Not authorized to update this site');
+    }
+
+    // Generate new API key
+    site.apiKey = `sk_${uuidv4().replace(/-/g, '')}`;
     await site.save();
     return site;
   }

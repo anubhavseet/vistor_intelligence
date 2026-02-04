@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type SiteDocument = Site & Document;
 
@@ -22,8 +22,8 @@ export class Site {
   @Prop({ type: [String], default: [] })
   allowedDomains: string[]; // Domains where tracking is allowed
 
-  @Prop({ required: true, index: true })
-  userId: string; // Owner/creator user ID
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  userId: Types.ObjectId;
 
   @Prop({ default: true })
   isActive: boolean;

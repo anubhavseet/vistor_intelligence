@@ -11,7 +11,7 @@ import { mapSiteToGraphQL, mapArrayToGraphQL } from '../common/utils/mappers.uti
 @Resolver(() => Site)
 @UseGuards(JwtAuthGuard)
 export class SitesResolver {
-  constructor(private sitesService: SitesService) {}
+  constructor(private sitesService: SitesService) { }
 
   @Query(() => [Site])
   async getSites(@CurrentUser() user: any): Promise<Site[]> {
@@ -22,7 +22,7 @@ export class SitesResolver {
   @Query(() => Site)
   async getSite(@Args('siteId') siteId: string, @CurrentUser() user: any): Promise<Site> {
     const site = await this.sitesService.getSiteBySiteId(siteId);
-    if (site.userId !== user.userId) {
+    if (String(site.userId) !== String(user.userId)) {
       throw new Error('Not authorized');
     }
     return mapSiteToGraphQL(site);
@@ -37,6 +37,16 @@ export class SitesResolver {
     return mapSiteToGraphQL(site);
   }
 
+  // Alias for createSite (for frontend compatibility)
+  @Mutation(() => Site)
+  async createSite(
+    @Args('input') input: CreateSiteInput,
+    @CurrentUser() user: any,
+  ): Promise<Site> {
+    const site = await this.sitesService.createSite(user.userId, input.name, input.domain);
+    return mapSiteToGraphQL(site);
+  }
+
   @Mutation(() => Site)
   async updateSite(
     @Args('siteId') siteId: string,
@@ -44,6 +54,24 @@ export class SitesResolver {
     @CurrentUser() user: any,
   ): Promise<Site> {
     const site = await this.sitesService.updateSite(user.userId, siteId, input);
+    return mapSiteToGraphQL(site);
+  }
+
+  @Mutation(() => Boolean)
+  async deleteSite(
+    @Args('siteId') siteId: string,
+    @CurrentUser() user: any,
+  ): Promise<boolean> {
+    await this.sitesService.deleteSite(user.userId, siteId);
+    return true;
+  }
+
+  @Mutation(() => Site)
+  async regenerateApiKey(
+    @Args('siteId') siteId: string,
+    @CurrentUser() user: any,
+  ): Promise<Site> {
+    const site = await this.sitesService.regenerateApiKey(user.userId, siteId);
     return mapSiteToGraphQL(site);
   }
 }

@@ -17,7 +17,7 @@ export class GeminiService {
 
         this.genAI = new GoogleGenerativeAI(apiKey || 'dummy_key');
         this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        this.embeddingModel = this.genAI.getGenerativeModel({ model: 'embedding-001' });
+        this.embeddingModel = this.genAI.getGenerativeModel({ model: 'text-embedding-004' });
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
@@ -66,6 +66,8 @@ export class GeminiService {
       Generate a responsive, beautiful UI element (HTML and CSS) to address the user's intent. 
       The UI should match the site's existing design pattern (glassmorphism, vibrant colors if applicable, or safe corporate style depending on context).
       The element should be an overlay, modal, or specific section injection. And It should be responsive and beautiful and should have an closeing optin so that the user 
+      can close the element. The element should be closed when the user clicks on the close button.The UI should not block the website , And thw close button should always have 
+      vi-internal-close this class ,, Always generate a relevent and correct UI ,, The UI should be responsive and beautiful and should have an closeing optin so that the user 
       can close the element. The element should be closed when the user clicks on the close button.The UI should not block the website , And thw close button should always have 
       vi-internal-close this class ,, Always generate a relevent and correct UI
 

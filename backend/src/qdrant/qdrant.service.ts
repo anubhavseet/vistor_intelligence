@@ -45,13 +45,7 @@ export class QdrantService implements OnModuleInit {
     async upsertPoint(
         id: string,
         vector: number[],
-        payload: {
-            url: string;
-            selector: string;
-            raw_html: string;
-            description: string;
-            siteId: string;
-        },
+        payload: Record<string, any>,
     ) {
         try {
             await this.client.upsert(this.collectionName, {
@@ -63,7 +57,7 @@ export class QdrantService implements OnModuleInit {
                     },
                 ],
             });
-            this.logger.debug(`Upserted point ${id} for ${payload.url}`);
+            this.logger.debug(`Upserted point ${id} for ${payload.url || 'unknown'}`);
         } catch (error) {
             this.logger.error(`Error upserting point ${id}`, error);
             throw error;
