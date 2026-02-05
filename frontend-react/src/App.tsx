@@ -21,6 +21,7 @@ import SettingsPage from '@/pages/Settings'
 // SiteDetailPage seems redundant with SiteOverviewPage or distinct? keeping for now.
 import SiteDetailPage from '@/pages/SiteDetail'
 import SiteAnalyticsListPage from '@/pages/dashboard/SiteAnalyticsList'
+import IntentPromptsPage from '@/pages/IntentPromptsPage'
 
 //ProtectedRoute wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -55,6 +56,7 @@ function App() {
             <Route path="sites" element={<SitesPage />} />
             <Route path="sites/:siteId" element={<SiteOverviewPage />} />
             <Route path="sites/:siteId/settings" element={<SiteSettingsPage />} />
+            <Route path="sites/:siteId/prompts" element={<IntentPromptsPage />} />
             <Route path="crawling" element={<CrawlingPage />} />
             <Route path="site-analytics" element={<SiteAnalyticsListPage />} />
             <Route path="tracking-code" element={<TrackingCodePage />} />

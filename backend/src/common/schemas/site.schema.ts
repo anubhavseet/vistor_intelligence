@@ -35,6 +35,7 @@ export class Site {
       enableBehaviorTracking: Boolean,
       dataRetentionDays: Number,
       trackingStartDelay: Number,
+      usePreGeneratedIntentUI: Boolean,
     },
     default: {
       enableTracking: true,
@@ -42,6 +43,7 @@ export class Site {
       enableBehaviorTracking: true,
       dataRetentionDays: 90,
       trackingStartDelay: 0,
+      usePreGeneratedIntentUI: false,
     },
   })
   settings: {
@@ -50,6 +52,7 @@ export class Site {
     enableBehaviorTracking: boolean;
     dataRetentionDays: number;
     trackingStartDelay: number;
+    usePreGeneratedIntentUI: boolean;
   };
 
   @Prop()

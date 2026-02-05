@@ -6,7 +6,6 @@ import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 import {
-    Settings,
     Save,
     Trash2,
     RefreshCw,
@@ -41,6 +40,7 @@ export default function SiteSettingsPage() {
     const [enableBehaviorTracking, setEnableBehaviorTracking] = useState(true)
     const [dataRetentionDays, setDataRetentionDays] = useState(90)
     const [trackingStartDelay, setTrackingStartDelay] = useState(0)
+    const [usePreGeneratedIntentUI, setUsePreGeneratedIntentUI] = useState(false)
 
     const [showApiKey, setShowApiKey] = useState(false)
     const [copiedApiKey, setCopiedApiKey] = useState(false)
@@ -66,6 +66,7 @@ export default function SiteSettingsPage() {
             setEnableBehaviorTracking(site.settings.enableBehaviorTracking)
             setDataRetentionDays(site.settings.dataRetentionDays)
             setTrackingStartDelay(site.settings.trackingStartDelay || 0)
+            setUsePreGeneratedIntentUI(site.settings.usePreGeneratedIntentUI || false)
         }
     }, [site])
 
@@ -109,7 +110,8 @@ export default function SiteSettingsPage() {
                     enableGeoLocation,
                     enableBehaviorTracking,
                     dataRetentionDays,
-                    trackingStartDelay
+                    trackingStartDelay,
+                    usePreGeneratedIntentUI
                 }
             })
             toast.success('Site updated successfully!')
@@ -445,6 +447,30 @@ export default function SiteSettingsPage() {
                                         ms
                                     </span>
                                 </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 rounded-md border bg-muted/30">
+                                <div className="flex items-center space-x-3">
+                                    <Activity className="w-4 h-4 text-cyan-500" />
+                                    <div>
+                                        <div className="font-medium">Use Pre-Generated AI Intent UI</div>
+                                        <div className="text-sm text-muted-foreground">Use pre-generated UI for faster performance instead of generating on-the-go</div>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setUsePreGeneratedIntentUI(!usePreGeneratedIntentUI)}
+                                    className={cn(
+                                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                                        usePreGeneratedIntentUI ? 'bg-primary' : 'bg-muted-foreground'
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                                            usePreGeneratedIntentUI ? 'translate-x-6' : 'translate-x-1'
+                                        )}
+                                    />
+                                </button>
                             </div>
                         </div>
                     </div>

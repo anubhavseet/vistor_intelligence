@@ -22,6 +22,7 @@ export const GET_SITES = gql`
         enableBehaviorTracking
         dataRetentionDays
         trackingStartDelay
+        usePreGeneratedIntentUI
       }
       apiKey
       createdAt
@@ -46,6 +47,7 @@ export const GET_SITE = gql`
         enableBehaviorTracking
         dataRetentionDays
         trackingStartDelay
+        usePreGeneratedIntentUI
       }
       apiKey
       createdAt
@@ -70,6 +72,7 @@ export const CREATE_SITE = gql`
         enableBehaviorTracking
         dataRetentionDays
         trackingStartDelay
+        usePreGeneratedIntentUI
       }
       apiKey
       createdAt
@@ -94,6 +97,7 @@ export const UPDATE_SITE = gql`
         enableBehaviorTracking
         dataRetentionDays
         trackingStartDelay
+        usePreGeneratedIntentUI
       }
       apiKey
       createdAt
@@ -124,6 +128,7 @@ export const REGENERATE_API_KEY = gql`
         enableBehaviorTracking
         dataRetentionDays
         trackingStartDelay
+        usePreGeneratedIntentUI
       }
       apiKey
       createdAt
@@ -142,6 +147,7 @@ export interface SiteSettings {
   enableBehaviorTracking: boolean
   dataRetentionDays: number
   trackingStartDelay: number
+  usePreGeneratedIntentUI: boolean
 }
 
 export interface UpdateSiteSettings {
@@ -150,6 +156,7 @@ export interface UpdateSiteSettings {
   enableBehaviorTracking?: boolean
   dataRetentionDays?: number
   trackingStartDelay?: number
+  usePreGeneratedIntentUI?: boolean
 }
 
 

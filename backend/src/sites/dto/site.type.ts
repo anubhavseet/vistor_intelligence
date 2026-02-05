@@ -16,6 +16,9 @@ export class SiteSettings {
 
   @Field({ nullable: true, defaultValue: 0 })
   trackingStartDelay: number;
+
+  @Field({ nullable: true, defaultValue: false })
+  usePreGeneratedIntentUI: boolean;
 }
 
 @ObjectType()

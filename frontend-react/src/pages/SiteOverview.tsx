@@ -20,7 +20,8 @@ import {
     Database,
     CheckCircle,
     XCircle,
-    ExternalLink
+    ExternalLink,
+    Bot
 } from 'lucide-react'
 
 export default function SiteOverviewPage() {
@@ -95,6 +96,14 @@ export default function SiteOverviewPage() {
             href: `/dashboard/${siteId}?tab=analytics`,
             color: 'text-pink-500',
             bgColor: 'bg-pink-500/10'
+        },
+        {
+            name: 'AI Intent Prompts',
+            description: 'Configure AI triggers',
+            icon: Bot,
+            href: `/dashboard/sites/${siteId}/prompts`,
+            color: 'text-yellow-500',
+            bgColor: 'bg-yellow-500/10'
         }
     ]
 

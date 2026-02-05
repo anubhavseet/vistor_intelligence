@@ -71,7 +71,7 @@ export class GeminiService {
         userIntent: string,
         siteContextHtml: string,
         siteDesignDescription: string
-    ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string }> {
+    ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string; javascript_payload: string }> {
 
         const prompt = `
       You are an expert Frontend Developer and UX Designer.
@@ -82,19 +82,28 @@ export class GeminiService {
       Site Design/Style: "${siteDesignDescription}"
 
       Task:
-      Generate a responsive, beautiful UI element (HTML and CSS) to address the user's intent. 
+      Generate a responsive, beautiful UI element (HTML, CSS, and JS) to address the user's intent. 
       The UI should match the site's existing design pattern (glassmorphism, vibrant colors if applicable, or safe corporate style depending on context).
-      The element should be an overlay, modal, or specific section injection. And It should be responsive and beautiful and should have an closeing optin so that the user 
-      can close the element. The element should be closed when the user clicks on the close button.The UI should not block the website , And thw close button should always have 
-      vi-internal-close this class ,, Always generate a relevent and correct UI ,, The UI should be responsive and beautiful and should have an closeing optin so that the user 
-      can close the element. The element should be closed when the user clicks on the close button.The UI should not block the website , And thw close button should always have 
-      vi-internal-close this class ,, Always generate a relevent and correct UI
+      The element should be an overlay, modal, or specific section injection.
+      
+      Requirements:
+      1. IT MUST have a closing mechanism (e.g., specific close button).
+      2. The close button MUST have the class 'vi-internal-close'.
+      3. The UI should NOT block the website content unless it's a modal, but even then ensure it's user-friendly.
+      4. Include separate JavaScript for interactivity (closing, animations, form handling). Use Vanilla JS.
+      5. Scope CSS to the unique ID of the container to prevent leakage.
+      6. Ensure the JS selects elements safely, preferably using the unique ID.
+
+      Disclaimer:Make sure the UI is not intrusive and can be closed easily and the closeing button 
+        should have "vi-internal-close"  this class every time , The generated Javascript should not have 
+        any error and should be able to run in the browser same goes for HTML and CSS.
 
       Return ONLY a JSON object with the following structure (no markdown, no extra text):
       {
-        "injection_target_selector": "The CSS selector where this element should be appended (e.g., 'body', '#pricing', '.hero-section')",
+        "injection_target_selector": "The CSS selector where this element should be appended (e.g., 'body', '#pricing')",
         "html_payload": "The raw HTML of the component. Use a unique ID for the container.",
-        "scoped_css": "The CSS styles for the component. Scope them to the unique ID to prevent leakage."
+        "scoped_css": "The CSS styles. Scope them to the unique ID.",
+        "javascript_payload": "The Vanilla JS logic (e.g., event listeners for closing, submission)."
       }
     `;
 
@@ -107,14 +116,23 @@ export class GeminiService {
             // Clean up markdown code blocks if present
             const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
             console.log(jsonString);
-            return JSON.parse(jsonString);
+            const parsed = JSON.parse(jsonString);
+
+            // Ensure compat if older prompt version cached or erratic
+            return {
+                injection_target_selector: parsed.injection_target_selector || 'body',
+                html_payload: parsed.html_payload || '',
+                scoped_css: parsed.scoped_css || '',
+                javascript_payload: parsed.javascript_payload || ''
+            };
         } catch (error) {
             this.logger.error('Error generating UI element', error);
             // Fallback
             return {
                 injection_target_selector: 'body',
-                html_payload: '<div id="ai-fallback" style="position:fixed;bottom:20px;right:20px;padding:20px;background:white;box-shadow:0 4px 12px rgba(0,0,0,0.1);border-radius:8px;">How can we help you?</div>',
-                scoped_css: '#ai-fallback { z-index: 9999; font-family: sans-serif; }'
+                html_payload: '<div id="ai-fallback" style="position:fixed;bottom:20px;right:20px;padding:20px;background:white;box-shadow:0 4px 12px rgba(0,0,0,0.1);border-radius:8px;">How can we help you? <button class="vi-internal-close" style="margin-left:10px;">x</button></div>',
+                scoped_css: '#ai-fallback { z-index: 9999; font-family: sans-serif; }',
+                javascript_payload: 'document.querySelector("#ai-fallback .vi-internal-close")?.addEventListener("click", () => document.getElementById("ai-fallback").remove());'
             };
         }
     }

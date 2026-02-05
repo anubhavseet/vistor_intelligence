@@ -28,6 +28,11 @@ export class UpdateSiteSettingsInput {
   @IsOptional()
   @IsNumber()
   trackingStartDelay?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  usePreGeneratedIntentUI?: boolean;
 }
 
 @InputType()

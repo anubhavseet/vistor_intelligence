@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Account } from '../common/schemas/account.schema';
 import { GeminiService } from '../ai-generation/gemini.service';
 import { QdrantService } from '../qdrant/qdrant.service';
+import { IntentPromptsService } from './intent-prompts.service';
+import { SitesService } from '../sites/sites.service';
 
 export interface SignalBatch {
   dwell_time: Record<string, number>;
@@ -28,6 +30,8 @@ export class IntentService {
   constructor(
     private geminiService: GeminiService,
     private qdrantService: QdrantService,
+    private intentPromptsService: IntentPromptsService,
+    private sitesService: SitesService,
   ) { }
 
   /**
@@ -45,76 +49,110 @@ export class IntentService {
     let uiPayload = null;
 
     // 2. Trigger AI Generation if Intent is High or specific trigger
-    // Trigger criteria: Lead score OR High Researcher with hesitation
-    const shouldTriggerAi = (category === 'Lead') || (category === 'Bouncer') || (category === 'Researcher' && signals.hesitation_event) || (suggestedAction !== null);
+    const exitIntent = signals.events ? signals.events.find(e => e.type === 'exit_intent') : null;
+    const isHesitating = signals.hesitation_event;
+
+    // Determine mapping to IntentPrompt keys
+    let intentKey = null;
+    if (exitIntent) intentKey = 'bounce_risk';
+    else if (isHesitating) intentKey = 'hesitation';
+    else if (category === 'Lead') intentKey = 'high_intent';
+    else if (category === 'Researcher') intentKey = 'researcher';
+
+    // Check if we should trigger based on having a valid intent key or existing logic
+    const shouldTriggerAi = intentKey || (category === 'Lead') || (suggestedAction !== null);
 
     if (shouldTriggerAi) {
       try {
-        // A. Understand Context
-        // Determine what the user is interested in based on dwell time or copy text
-        let queryText = "General interest in product";
-        const interests: string[] = [];
+        // Check site settings for pre-generated UI preference
+        const site = await this.sitesService.getSiteBySiteId(siteId);
+        let usePreGenerated = site.settings?.usePreGeneratedIntentUI || false;
 
-        if (signals.copy_text && signals.copy_text.length > 0) {
-          interests.push(...signals.copy_text);
-        }
+        if (usePreGenerated && intentKey) {
+          // Use pre-generated UI from IntentPrompt
+          const customPrompt = await this.intentPromptsService.getPromptForIntent(siteId, intentKey);
 
-        if (signals.dwell_time) {
-          // Sort by time descending
-          const sortedDwell = Object.entries(signals.dwell_time)
-            .sort(([, a], [, b]) => b - a)
-            .slice(0, 3); // Top 3 elements
-
-          if (sortedDwell.length > 0) {
-            interests.push(...sortedDwell.map(([id]) => id));
+          if (customPrompt && customPrompt.generatedHtml) {
+            this.logger.log(`Using pre-generated UI for intent '${intentKey}'`);
+            uiPayload = {
+              injection_target_selector: 'body',
+              html_payload: customPrompt.generatedHtml,
+              scoped_css: customPrompt.generatedCss || '',
+              javascript_payload: customPrompt.generatedJs || ''
+            };
+          } else {
+            this.logger.warn(`No pre-generated UI found for intent '${intentKey}', falling back to on-the-go generation`);
+            usePreGenerated = false; // Fallback to on-the-go generation
           }
         }
 
-        if (interests.length > 0) {
-          queryText = interests.join(' ');
-        }
+        // If not using pre-generated UI, generate on-the-go
+        if (!usePreGenerated || !uiPayload) {
+          // A. Understand Context
+          let queryText = "General interest in product";
+          const interests: string[] = [];
 
-        // B. Search Semantic Context
-        const embedding = await this.geminiService.generateEmbedding(queryText);
+          if (signals.copy_text && signals.copy_text.length > 0) {
+            interests.push(...signals.copy_text);
+          }
 
-        // Filter by Site ID AND Current URL (if available) to get page-specific context
-        const filters: any = {
-          must: [
-            { key: "siteId", match: { value: siteId } }
-          ]
-        };
+          if (signals.dwell_time) {
+            const sortedDwell = Object.entries(signals.dwell_time)
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, 3);
+            if (sortedDwell.length > 0) {
+              interests.push(...sortedDwell.map(([id]) => id));
+            }
+          }
 
-        if (signals.url) {
-          // We try to match the base URL or exact URL
-          // For now, let's use the exact URL as indexed by the crawler
-          filters.must.push({ key: "url", match: { value: signals.url } });
-        }
+          if (interests.length > 0) {
+            queryText = interests.join(' ');
+          }
 
-        const searchResults = await this.qdrantService.search(embedding, filters, 1);
+          // B. Search Semantic Context
+          const embedding = await this.geminiService.generateEmbedding(queryText);
 
-        if (searchResults.length > 0) {
-          const context = searchResults[0].payload;
+          const filters: any = {
+            must: [
+              { key: "siteId", match: { value: siteId } }
+            ]
+          };
 
-          this.logger.log(`Generating UI for intent: ${suggestedAction || 'Engagement'} on context: ${context.selector}`);
+          if (signals.url) {
+            filters.must.push({ key: "url", match: { value: signals.url } });
+          }
 
-          // C. Generate UI
-          uiPayload = await this.geminiService.generateUiElement(
-            suggestedAction || "High intent engagement",
-            (context.raw_html as string) || "",
-            (context.description as string) || "Standard business website"
-          );
-        } else {
-          // Fallback if no context found
-          uiPayload = await this.geminiService.generateUiElement(
-            suggestedAction || "High intent engagement",
-            "",
-            "Standard business website"
-          );
+          const searchResults = await this.qdrantService.search(embedding, filters, 1);
+          const context = searchResults.length > 0 ? searchResults[0].payload : null;
+
+          // C. Fetch Custom Prompt
+          let instruction = suggestedAction || "High intent engagement";
+          if (intentKey) {
+            const customPrompt = await this.intentPromptsService.getPromptForIntent(siteId, intentKey);
+            if (customPrompt) {
+              instruction = customPrompt.prompt;
+              this.logger.log(`Using custom prompt for intent '${intentKey}': ${instruction.substring(0, 50)}...`);
+            }
+          }
+
+          if (context) {
+            this.logger.log(`Generating UI on-the-go for intent: ${intentKey} on context: ${context.selector}`);
+            uiPayload = await this.geminiService.generateUiElement(
+              instruction,
+              (context.raw_html as string) || "",
+              (context.description as string) || "Standard business website"
+            );
+          } else {
+            uiPayload = await this.geminiService.generateUiElement(
+              instruction,
+              "",
+              "Standard business website"
+            );
+          }
         }
 
       } catch (e) {
         this.logger.error('Failed to generate AI UI', e);
-        // Fail silently and return just the score/action
       }
     }
 
@@ -167,7 +205,6 @@ export class IntentService {
       }
       // If Bouncer, do nothing (null)
     } else {
-      if (score > 10) suggestedAction = 'priority_support_chat'
       if (score > 80) suggestedAction = 'priority_support_chat';
       else if (score > 50) suggestedAction = 'lure_custoumers_to_contact_Us_with_discount_or_offer';
     }

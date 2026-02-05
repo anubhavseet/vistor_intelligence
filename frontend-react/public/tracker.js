@@ -358,7 +358,7 @@
     }
 
     function injectAiUi(payload) {
-        const { injection_target_selector, html_payload, scoped_css } = payload;
+        const { injection_target_selector, html_payload, scoped_css, javascript_payload } = payload;
         if (document.getElementById('vi-ai-host')) return;
 
         stopTracking();
@@ -368,7 +368,11 @@
         host.id = 'vi-ai-host';
         host.style.cssText = "position: relative; z-index: 2147483647;";
         const shadow = host.attachShadow({ mode: 'open' });
-
+        if (javascript_payload) {
+            const script = document.createElement('script');
+            script.textContent = javascript_payload;
+            shadow.appendChild(script);
+        }
         shadow.innerHTML = `
     <style>
       ${scoped_css}
