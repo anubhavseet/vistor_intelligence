@@ -53,4 +53,9 @@ export class TrackingController {
   async getLiveSessions(@Param('siteId') siteId: string) {
     return await this.trackingService.getLiveSessions(siteId);
   }
+
+  @Get('config/:siteId')
+  async getSiteConfig(@Param('siteId') siteId: string) {
+    return await this.trackingService.getSiteConfig(siteId);
+  }
 }

@@ -82,7 +82,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                                                     "group flex items-center rounded-md py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                                     isCollapsed ? "justify-center px-0" : "px-2",
                                                     isActive
-                                                        ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                                        ? "bg-gradient-to-r from-violet-500/10 to-indigo-500/10 text-violet-400 border-r-2 border-violet-500"
                                                         : "text-muted-foreground"
                                                 )
                                             }
@@ -111,7 +111,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                                     "group flex items-center rounded-md py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                     isCollapsed ? "justify-center px-0" : "px-2",
                                     isActive
-                                        ? "bg-primary text-primary-foreground"
+                                        ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20"
                                         : "text-muted-foreground"
                                 )
                             }

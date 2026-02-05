@@ -13,6 +13,9 @@ export class SiteSettings {
 
   @Field()
   dataRetentionDays: number;
+
+  @Field({ nullable: true, defaultValue: 0 })
+  trackingStartDelay: number;
 }
 
 @ObjectType()

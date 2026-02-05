@@ -54,9 +54,11 @@ export default function HomePage() {
     return (
         <div className="min-h-screen bg-[#030712] text-white selection:bg-purple-500/30 overflow-x-hidden">
             {/* Background decoration */}
+            {/* Rich Animated Background */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 blur-[120px] rounded-full" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 blur-[120px] rounded-full" />
+                <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-600/30 blur-[120px] rounded-full animate-blob mix-blend-screen" />
+                <div className="absolute top-[20%] right-[-10%] w-[50%] h-[50%] bg-blue-600/30 blur-[120px] rounded-full animate-blob animation-delay-2000 mix-blend-screen" />
+                <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-pink-600/30 blur-[120px] rounded-full animate-blob animation-delay-4000 mix-blend-screen" />
             </div>
 
             {/* Nav */}
@@ -99,7 +101,7 @@ export default function HomePage() {
                         </div>
                         <h1 className="text-6xl lg:text-7xl font-bold leading-tight mb-8">
                             Turn Anonymous<br />
-                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-red-500">
+                            <span className="text-gradient font-extrabold tracking-tight">
                                 Visitors into Revenue
                             </span>
                         </h1>
@@ -141,9 +143,10 @@ export default function HomePage() {
                         className="relative"
                     >
                         {/* Glossy Card */}
-                        <div className="bg-white/5 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] p-10 shadow-3xl relative overflow-hidden group">
+                        {/* Glossy Card */}
+                        <div className="glass-panel rounded-[2.5rem] p-10 relative overflow-hidden group border-t border-l border-white/20 shadow-2xl shadow-purple-900/20">
                             {/* Animated corner glow */}
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/20 blur-3xl group-hover:bg-purple-500/40 transition-all duration-700" />
+                            <div className="absolute -top-20 -right-20 w-64 h-64 bg-gradient-to-br from-purple-500 to-pink-500 blur-[80px] opacity-40 group-hover:opacity-60 transition-all duration-700" />
 
                             <div className="relative z-10">
                                 <div className="flex bg-white/5 p-1 rounded-2xl mb-8">
@@ -192,8 +195,9 @@ export default function HomePage() {
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
                                 transition={{ delay: idx * 0.1 }}
-                                className="p-8 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 hover:border-purple-500/30 transition-all group cursor-default"
+                                className="p-8 glass-panel rounded-3xl glass-card-hover group cursor-default relative overflow-hidden"
                             >
+                                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-pink-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 <div className="w-14 h-14 rounded-2xl bg-purple-600/20 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                                     <feature.icon className="w-8 h-8 text-purple-400" />
                                 </div>

@@ -40,6 +40,7 @@ export default function SiteSettingsPage() {
     const [enableGeoLocation, setEnableGeoLocation] = useState(true)
     const [enableBehaviorTracking, setEnableBehaviorTracking] = useState(true)
     const [dataRetentionDays, setDataRetentionDays] = useState(90)
+    const [trackingStartDelay, setTrackingStartDelay] = useState(0)
 
     const [showApiKey, setShowApiKey] = useState(false)
     const [copiedApiKey, setCopiedApiKey] = useState(false)
@@ -64,6 +65,7 @@ export default function SiteSettingsPage() {
             setEnableGeoLocation(site.settings.enableGeoLocation)
             setEnableBehaviorTracking(site.settings.enableBehaviorTracking)
             setDataRetentionDays(site.settings.dataRetentionDays)
+            setTrackingStartDelay(site.settings.trackingStartDelay || 0)
         }
     }, [site])
 
@@ -106,7 +108,8 @@ export default function SiteSettingsPage() {
                     enableTracking,
                     enableGeoLocation,
                     enableBehaviorTracking,
-                    dataRetentionDays
+                    dataRetentionDays,
+                    trackingStartDelay
                 }
             })
             toast.success('Site updated successfully!')
@@ -416,6 +419,30 @@ export default function SiteSettingsPage() {
                                     />
                                     <span className="font-semibold min-w-[80px]">
                                         {dataRetentionDays} days
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-md border bg-muted/30">
+                                <div className="flex items-center space-x-3 mb-3">
+                                    <Activity className="w-4 h-4 text-purple-500" />
+                                    <div>
+                                        <div className="font-medium">Tracking Start Delay</div>
+                                        <div className="text-sm text-muted-foreground">Milliseconds to wait before starting tracking (e.g., 2000)</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        max="60000"
+                                        step="100"
+                                        value={trackingStartDelay}
+                                        onChange={(e) => setTrackingStartDelay(parseInt(e.target.value))}
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                    />
+                                    <span className="font-semibold min-w-[50px]">
+                                        ms
                                     </span>
                                 </div>
                             </div>

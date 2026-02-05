@@ -54,25 +54,28 @@ export default function SiteAnalyticsListPage() {
                             <Link
                                 key={site.siteId}
                                 to={`/dashboard/${site.siteId}?tab=analytics`}
-                                className="group relative overflow-hidden rounded-lg border bg-card p-6 shadow-sm transition-all hover:shadow-md hover:border-primary/50"
+                                className="group relative overflow-hidden rounded-xl border bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/50 hover:-translate-y-1"
                             >
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                                        <BarChart3 className="w-5 h-5 text-primary" />
+                                <div className="absolute inset-0 bg-gradient-to-br from-transparent to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="relative z-10">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="p-2.5 bg-gradient-to-br from-violet-500/10 to-indigo-500/10 rounded-xl group-hover:from-violet-500/20 group-hover:to-indigo-500/20 transition-all">
+                                            <BarChart3 className="w-5 h-5 text-primary" />
+                                        </div>
+                                        <div className={cn("h-2 w-2 rounded-full", site.isActive ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" : "bg-gray-300")} />
                                     </div>
-                                    <div className={cn("h-2 w-2 rounded-full", site.isActive ? "bg-green-500" : "bg-gray-300")} />
-                                </div>
 
-                                <div className="space-y-1 mb-4">
-                                    <h3 className="font-semibold leading-none tracking-tight group-hover:text-primary transition-colors">{site.name}</h3>
-                                    <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                        <Globe className="w-3 h-3" />
-                                        {site.domain}
-                                    </p>
-                                </div>
+                                    <div className="space-y-1 mb-4">
+                                        <h3 className="font-semibold leading-none tracking-tight group-hover:text-primary transition-colors text-lg">{site.name}</h3>
+                                        <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                                            <Globe className="w-3.5 h-3.5" />
+                                            {site.domain}
+                                        </p>
+                                    </div>
 
-                                <div className="flex items-center text-sm font-medium text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
-                                    View Analytics <ArrowRight className="ml-1 w-4 h-4" />
+                                    <div className="flex items-center text-sm font-bold text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
+                                        View Analytics <ArrowRight className="ml-1 w-4 h-4" />
+                                    </div>
                                 </div>
                             </Link>
                         ))

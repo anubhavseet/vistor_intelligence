@@ -4,6 +4,8 @@ import { gql } from '@apollo/client'
 // QUERIES
 // ============================================
 
+// ... (previous code) ...
+
 export const GET_SITES = gql`
   query GetSites {
     getSites {
@@ -19,6 +21,7 @@ export const GET_SITES = gql`
         enableGeoLocation
         enableBehaviorTracking
         dataRetentionDays
+        trackingStartDelay
       }
       apiKey
       createdAt
@@ -42,6 +45,7 @@ export const GET_SITE = gql`
         enableGeoLocation
         enableBehaviorTracking
         dataRetentionDays
+        trackingStartDelay
       }
       apiKey
       createdAt
@@ -49,10 +53,6 @@ export const GET_SITE = gql`
     }
   }
 `
-
-// ============================================
-// MUTATIONS
-// ============================================
 
 export const CREATE_SITE = gql`
   mutation CreateSite($input: CreateSiteInput!) {
@@ -69,6 +69,7 @@ export const CREATE_SITE = gql`
         enableGeoLocation
         enableBehaviorTracking
         dataRetentionDays
+        trackingStartDelay
       }
       apiKey
       createdAt
@@ -92,6 +93,7 @@ export const UPDATE_SITE = gql`
         enableGeoLocation
         enableBehaviorTracking
         dataRetentionDays
+        trackingStartDelay
       }
       apiKey
       createdAt
@@ -121,6 +123,7 @@ export const REGENERATE_API_KEY = gql`
         enableGeoLocation
         enableBehaviorTracking
         dataRetentionDays
+        trackingStartDelay
       }
       apiKey
       createdAt
@@ -134,44 +137,47 @@ export const REGENERATE_API_KEY = gql`
 // ============================================
 
 export interface SiteSettings {
-    enableTracking: boolean
-    enableGeoLocation: boolean
-    enableBehaviorTracking: boolean
-    dataRetentionDays: number
+  enableTracking: boolean
+  enableGeoLocation: boolean
+  enableBehaviorTracking: boolean
+  dataRetentionDays: number
+  trackingStartDelay: number
 }
 
 export interface UpdateSiteSettings {
-    enableTracking?: boolean
-    enableGeoLocation?: boolean
-    enableBehaviorTracking?: boolean
-    dataRetentionDays?: number
+  enableTracking?: boolean
+  enableGeoLocation?: boolean
+  enableBehaviorTracking?: boolean
+  dataRetentionDays?: number
+  trackingStartDelay?: number
 }
 
+
 export interface Site {
-    id: string
-    siteId: string
-    name: string
-    domain?: string
-    allowedDomains: string[]
-    userId: string
-    isActive: boolean
-    settings: SiteSettings
-    apiKey?: string
-    createdAt: Date
-    updatedAt: Date
+  id: string
+  siteId: string
+  name: string
+  domain?: string
+  allowedDomains: string[]
+  userId: string
+  isActive: boolean
+  settings: SiteSettings
+  apiKey?: string
+  createdAt: Date
+  updatedAt: Date
 }
 
 export interface CreateSiteInput {
-    name: string
-    domain?: string
+  name: string
+  domain?: string
 }
 
 export interface UpdateSiteInput {
-    name?: string
-    domain?: string
-    allowedDomains?: string[]
-    isActive?: boolean
-    settings?: UpdateSiteSettings
+  name?: string
+  domain?: string
+  allowedDomains?: string[]
+  isActive?: boolean
+  settings?: UpdateSiteSettings
 }
 
 // ============================================
@@ -179,25 +185,25 @@ export interface UpdateSiteInput {
 // ============================================
 
 export interface GetSitesResponse {
-    getSites: Site[]
+  getSites: Site[]
 }
 
 export interface GetSiteResponse {
-    getSite: Site
+  getSite: Site
 }
 
 export interface CreateSiteResponse {
-    createSite: Site
+  createSite: Site
 }
 
 export interface UpdateSiteResponse {
-    updateSite: Site
+  updateSite: Site
 }
 
 export interface DeleteSiteResponse {
-    deleteSite: boolean
+  deleteSite: boolean
 }
 
 export interface RegenerateApiKeyResponse {
-    regenerateApiKey: Site
+  regenerateApiKey: Site
 }

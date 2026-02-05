@@ -45,13 +45,13 @@ export default function LoginForm() {
       <div>
         <label className="block text-sm font-medium text-gray-400 mb-2">Email Address</label>
         <div className="relative group">
-          <Mail className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-purple-400 transition-colors" />
+          <Mail className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@company.com"
-            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all font-medium"
+            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all font-medium"
           />
         </div>
       </div>
@@ -59,13 +59,13 @@ export default function LoginForm() {
       <div>
         <label className="block text-sm font-medium text-gray-400 mb-2">Password</label>
         <div className="relative group">
-          <Lock className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-purple-400 transition-colors" />
+          <Lock className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-violet-400 transition-colors" />
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
-            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all font-medium"
+            className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 transition-all font-medium"
           />
         </div>
       </div>
@@ -80,7 +80,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl font-bold text-white shadow-xl shadow-purple-500/20 hover:shadow-purple-500/40 hover:-translate-y-1 transition-all active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:translate-y-0"
+        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl font-bold text-white shadow-xl shadow-indigo-500/20 hover:shadow-indigo-500/40 hover:-translate-y-1 transition-all active:scale-95 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:translate-y-0"
       >
         {loading ? (
           <RefreshCw className="w-6 h-6 animate-spin" />

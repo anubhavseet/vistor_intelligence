@@ -23,6 +23,11 @@ export class UpdateSiteSettingsInput {
   @IsOptional()
   @IsNumber()
   dataRetentionDays?: number;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsNumber()
+  trackingStartDelay?: number;
 }
 
 @InputType()

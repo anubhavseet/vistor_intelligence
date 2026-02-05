@@ -5,24 +5,42 @@ import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 @Injectable()
 export class GeminiService {
     private readonly logger = new Logger(GeminiService.name);
-    private genAI: GoogleGenerativeAI;
-    private model: GenerativeModel;
-    private embeddingModel: GenerativeModel;
+    private apiKeys: string[] = [];
+    private currentKeyIndex = 0;
 
     constructor(private configService: ConfigService) {
-        const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-        if (!apiKey) {
-            this.logger.warn('GEMINI_API_KEY not found in environment variables');
+        const apiKeysString = this.configService.get<string>('GEMINI_API_KEYS');
+        const singleApiKey = this.configService.get<string>('GEMINI_API_KEY');
+
+        if (apiKeysString) {
+            this.apiKeys = apiKeysString.split(',').map(key => key.trim()).filter(key => key.length > 0);
         }
 
-        this.genAI = new GoogleGenerativeAI(apiKey || 'dummy_key');
-        this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        this.embeddingModel = this.genAI.getGenerativeModel({ model: 'text-embedding-004' });
+        if (this.apiKeys.length === 0 && singleApiKey) {
+            this.apiKeys.push(singleApiKey);
+        }
+
+        if (this.apiKeys.length === 0) {
+            this.logger.warn('No GEMINI_API_KEYS or GEMINI_API_KEY found in environment variables');
+            this.apiKeys.push('dummy_key');
+        } else {
+            this.logger.log(`Loaded ${this.apiKeys.length} Gemini API keys`);
+        }
+    }
+
+    private getRotatedModel(modelName: string): GenerativeModel {
+        const apiKey = this.apiKeys[this.currentKeyIndex];
+        // Rotate to the next key for the next request
+        this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        return genAI.getGenerativeModel({ model: modelName });
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
         try {
-            const result = await this.embeddingModel.embedContent(text);
+            const model = this.getRotatedModel('text-embedding-004');
+            const result = await model.embedContent(text);
             const embedding = result.embedding;
             return embedding.values;
         } catch (error) {
@@ -39,7 +57,8 @@ export class GeminiService {
     `;
 
         try {
-            const result = await this.model.generateContent(prompt);
+            const model = this.getRotatedModel('gemini-2.5-flash');
+            const result = await model.generateContent(prompt);
             const response = await result.response;
             return response.text();
         } catch (error) {
@@ -80,7 +99,8 @@ export class GeminiService {
     `;
 
         try {
-            const result = await this.model.generateContent(prompt);
+            const model = this.getRotatedModel('gemini-2.5-flash');
+            const result = await model.generateContent(prompt);
             const response = await result.response;
             const text = response.text();
 

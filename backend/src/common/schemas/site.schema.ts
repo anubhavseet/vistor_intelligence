@@ -34,12 +34,14 @@ export class Site {
       enableGeoLocation: Boolean,
       enableBehaviorTracking: Boolean,
       dataRetentionDays: Number,
+      trackingStartDelay: Number,
     },
     default: {
       enableTracking: true,
       enableGeoLocation: true,
       enableBehaviorTracking: true,
       dataRetentionDays: 90,
+      trackingStartDelay: 0,
     },
   })
   settings: {
@@ -47,6 +49,7 @@ export class Site {
     enableGeoLocation: boolean;
     enableBehaviorTracking: boolean;
     dataRetentionDays: number;
+    trackingStartDelay: number;
   };
 
   @Prop()

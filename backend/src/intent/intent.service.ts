@@ -10,6 +10,8 @@ export interface SignalBatch {
   rage_clicks: number;
   copy_text: string[];
   events: { type: string; timestamp: number }[];
+  interactions?: Record<string, { clicks: number; hovers: number; inputs: number; last_timestamp: number }>;
+  url?: string;
 }
 
 export interface IntentResult {
@@ -73,31 +75,43 @@ export class IntentService {
         }
 
         // B. Search Semantic Context
-        // const embedding = await this.geminiService.generateEmbedding(queryText);
-        // const searchResults = await this.qdrantService.search(embedding, {
-        //   must: [
-        //     { key: "siteId", match: { value: siteId } }
-        //   ]
-        // }, 1);
+        const embedding = await this.geminiService.generateEmbedding(queryText);
 
-        // if (searchResults.length > 0) {
-        //   const context = searchResults[0].payload;
+        // Filter by Site ID AND Current URL (if available) to get page-specific context
+        const filters: any = {
+          must: [
+            { key: "siteId", match: { value: siteId } }
+          ]
+        };
 
-        //   this.logger.log(`Generating UI for intent: ${suggestedAction || 'Engagement'} on context: ${context.selector}`);
+        if (signals.url) {
+          // We try to match the base URL or exact URL
+          // For now, let's use the exact URL as indexed by the crawler
+          filters.must.push({ key: "url", match: { value: signals.url } });
+        }
 
-        // C. Generate UI
-        // uiPayload = await this.geminiService.generateUiElement(
-        //   suggestedAction || "High intent engagement",
-        //   (context.raw_html as string) || "",
-        //   (context.description as string) || "Standard business website"
-        // );
-        // }
+        const searchResults = await this.qdrantService.search(embedding, filters, 1);
 
-        uiPayload = await this.geminiService.generateUiElement(
-          suggestedAction || "High intent engagement",
-          "",
-          "Standard business website"
-        );
+        if (searchResults.length > 0) {
+          const context = searchResults[0].payload;
+
+          this.logger.log(`Generating UI for intent: ${suggestedAction || 'Engagement'} on context: ${context.selector}`);
+
+          // C. Generate UI
+          uiPayload = await this.geminiService.generateUiElement(
+            suggestedAction || "High intent engagement",
+            (context.raw_html as string) || "",
+            (context.description as string) || "Standard business website"
+          );
+        } else {
+          // Fallback if no context found
+          uiPayload = await this.geminiService.generateUiElement(
+            suggestedAction || "High intent engagement",
+            "",
+            "Standard business website"
+          );
+        }
+
       } catch (e) {
         this.logger.error('Failed to generate AI UI', e);
         // Fail silently and return just the score/action

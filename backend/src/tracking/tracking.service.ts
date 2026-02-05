@@ -193,4 +193,13 @@ export class TrackingService {
       .sort({ startedAt: -1 })
       .exec();
   }
+
+  async getSiteConfig(siteId: string) {
+    const site = await this.sitesService.getSiteBySiteId(siteId);
+    return {
+      settings: site.settings,
+      allowedDomains: site.allowedDomains,
+      isActive: site.isActive
+    };
+  }
 }
