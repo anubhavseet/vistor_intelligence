@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PubSub } from 'graphql-subscriptions';
 import { BullModule } from '@nestjs/bull';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CrawlerService } from './crawler.service';
@@ -19,7 +20,15 @@ import { CrawlJob, CrawlJobSchema } from '../common/schemas/crawl-job.schema';
         AiGenerationModule,
         QdrantModule,
     ],
-    providers: [CrawlerService, CrawlerResolver, WebsiteCrawlerProcessor],
+    providers: [
+        CrawlerService,
+        CrawlerResolver,
+        WebsiteCrawlerProcessor,
+        {
+            provide: 'PUB_SUB',
+            useValue: new PubSub(),
+        }
+    ],
     exports: [CrawlerService],
 })
 export class CrawlerModule { }

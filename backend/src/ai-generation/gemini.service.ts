@@ -32,15 +32,17 @@ export class GeminiService {
         const apiKey = this.apiKeys[this.currentKeyIndex];
         // Rotate to the next key for the next request
         this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-
         const genAI = new GoogleGenerativeAI(apiKey);
         return genAI.getGenerativeModel({ model: modelName });
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
         try {
-            const model = this.getRotatedModel('text-embedding-004');
-            const result = await model.embedContent(text);
+            const model = this.getRotatedModel('gemini-embedding-001');
+            const result = await model.embedContent({
+                content: { role: 'user', parts: [{ text }] },
+                outputDimensionality: 768,
+            } as any);
             const embedding = result.embedding;
             return embedding.values;
         } catch (error) {
@@ -51,8 +53,19 @@ export class GeminiService {
 
     async generateUiDescription(htmlSnippet: string): Promise<string> {
         const prompt = `
-      Analyze the following HTML snippet and describe its semantic purpose and visual style (colors, fonts, structure) strictly in 2-3 sentences.
-      HTML:
+      Analyze the following HTML/CSS snippet as an expert UI Designer.
+      
+      Extract the following strictly in 2-3 sentences:
+      1. Semantics: What is this section? (e.g., Pricing Table, Hero, Navbar)
+      2. Design System Tokens: 
+         - Dominant Colors (Hex/RGB)
+         - Typography (Serif/Sans, Size)
+         - Shapes (Rounded corners radius, Sharp edges)
+         - Depth (Flat, Shadowed, Glassmorphism)
+      
+      Output ONLY the description string.
+      
+      HTML Snippet:
       ${htmlSnippet}
     `;
 
@@ -74,36 +87,50 @@ export class GeminiService {
     ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string; javascript_payload: string }> {
 
         const prompt = `
-      You are an expert Frontend Developer and UX Designer.
+      You are an Elite Frontend Engineer and World-Class UI/UX Designer.
       
       Context:
       User Intent: "${userIntent}"
       Current Page Section Context (HTML): "${siteContextHtml.substring(0, 1000)}..."
       Site Design/Style: "${siteDesignDescription}"
 
-      Task:
-      Generate a responsive, beautiful UI element (HTML, CSS, and JS) to address the user's intent. 
-      The UI should match the site's existing design pattern (glassmorphism, vibrant colors if applicable, or safe corporate style depending on context).
-      The element should be an overlay, modal, or specific section injection.
-      
-      Requirements:
-      1. IT MUST have a closing mechanism (e.g., specific close button).
-      2. The close button MUST have the class 'vi-internal-close'.
-      3. The UI should NOT block the website content unless it's a modal, but even then ensure it's user-friendly.
-      4. Include separate JavaScript for interactivity (closing, animations, form handling). Use Vanilla JS.
-      5. Scope CSS to the unique ID of the container to prevent leakage.
-      6. Ensure the JS selects elements safely, preferably using the unique ID.
+      Objective:
+      Generate a STUNNING, HIGH-PERFORMANCE UI component to address the user's intent. 
+      This component will be injected into a Shadow DOM host on a client's website.
 
-      Disclaimer:Make sure the UI is not intrusive and can be closed easily and the closeing button 
-        should have "vi-internal-close"  this class every time , The generated Javascript should not have 
-        any error and should be able to run in the browser same goes for HTML and CSS.
+      Design Guidelines (MANDATORY):
+      1. **Aesthetics**: Use "Premium Modern" design. Think Stripe, Apple, or Linear.
+         - Use subtle glassmorphism (backdrop-filter: blur).
+         - Use modern gradients and profound drop shadows (box-shadow: 0 10px 30px -10px rgba(...)).
+         - Typography should be clean (system-ui, -apple-system, Inter).
+         - Animations: Add smooth entry animations (e.g., fade-in-up) using CSS @keyframes.
+      2. **Layout**:
+         - The component is isolated in a Shadow DOM.
+         - Use ':host' for the root container styles.
+         - For Modals: Use polished overlays.
+         - For Popups: clear visual hierarchy.
+      3. **Responsiveness**: Must work perfectly on Mobile and Desktop.
 
-      Return ONLY a JSON object with the following structure (no markdown, no extra text):
+      Technical Constraints (CRITICAL):
+      1. **Shadow DOM Environment**:
+         - DO NOT try to style 'body' or 'html'.
+         - CSS classes are scoped, so you can use simple class names (e.g., .card, .btn) without fear of collision.
+      2. **JavaScript**:
+         - Write standard Vanilla JS.
+         - The environment proxies 'document' to the Shadow Root, so 'document.getElementById' WORKS within the shadow context.
+         - DO NOT assume external libraries (jQuery, Bootstrap) exist. Write everything from scratch.
+         - ALWAYS add a closing mechanism.
+      3. **Closing Mechanism**:
+         - You MUST include a close button with class "vi-internal-close".
+         - Ensure the JS handles the click event for this button to remove the host element (or hide it).
+
+      Response Format:
+      Return ONLY valid JSON (RFC 8259 compliant). No markdown formatting.
       {
-        "injection_target_selector": "The CSS selector where this element should be appended (e.g., 'body', '#pricing')",
-        "html_payload": "The raw HTML of the component. Use a unique ID for the container.",
-        "scoped_css": "The CSS styles. Scope them to the unique ID.",
-        "javascript_payload": "The Vanilla JS logic (e.g., event listeners for closing, submission)."
+        "injection_target_selector": "The CSS selector on the HOST page where this should appear (e.g., 'body' for floating, '#product-root' for embedded)",
+        "html_payload": "The HTML structure. Start with a container div with a unique ID.",
+        "scoped_css": "The CSS. Use ':host' to style the wrapper. Do NOT include <style> tags.",
+        "javascript_payload": "The JavaScript logic. Do NOT include <script> tags. Ensure null checks."
       }
     `;
 
@@ -115,7 +142,7 @@ export class GeminiService {
 
             // Clean up markdown code blocks if present
             const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            console.log(jsonString);
+
             const parsed = JSON.parse(jsonString);
 
             // Ensure compat if older prompt version cached or erratic

@@ -1,7 +1,8 @@
 import { gql } from '@apollo/client'
-import { useQuery } from '@apollo/client/react'
-import { Loader2, Globe, CheckCircle2, XCircle, Clock, Zap } from 'lucide-react'
-import { useEffect } from 'react'
+import { useMutation, useQuery } from '@apollo/client/react'
+import { Loader2, Globe, CheckCircle2, XCircle, Clock, Zap, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import ConfirmationDialog from './ConfirmationDialog'
 
 const GET_SITE_CRAWL_JOBS = gql`
   query GetSiteCrawlJobs($siteId: String!) {
@@ -16,6 +17,28 @@ const GET_SITE_CRAWL_JOBS = gql`
       completedAt
       error
     }
+  }
+`
+
+const JOB_UPDATED_SUBSCRIPTION = gql`
+  subscription OnCrawlJobUpdated($siteId: String!) {
+    crawlJobUpdated(siteId: $siteId) {
+      jobId
+      siteId
+      status
+      pagesDiscovered
+      pagesCrawled
+      pagesFailed
+      startedAt
+      completedAt
+      error
+    }
+  }
+`
+
+const DELETE_CRAWL_JOB = gql`
+  mutation DeleteCrawlJob($jobId: String!) {
+    deleteCrawlJob(jobId: $jobId)
   }
 `
 
@@ -36,10 +59,41 @@ interface CrawlJobListProps {
 }
 
 export default function CrawlJobList({ siteId }: CrawlJobListProps) {
-    const { data, loading, error, refetch } = useQuery(GET_SITE_CRAWL_JOBS, {
+    const { data, loading, error, subscribeToMore } = useQuery(GET_SITE_CRAWL_JOBS, {
         variables: { siteId },
-        pollInterval: 5000, // Poll every 5 seconds for real-time updates
     })
+
+    const [deleteCrawlJob] = useMutation(DELETE_CRAWL_JOB, {
+        refetchQueries: [{ query: GET_SITE_CRAWL_JOBS, variables: { siteId } }],
+    })
+
+    useEffect(() => {
+        const unsubscribe = subscribeToMore({
+            document: JOB_UPDATED_SUBSCRIPTION,
+            variables: { siteId },
+            updateQuery: (prev, { subscriptionData }) => {
+                if (!subscriptionData.data) return prev
+                const updatedJob = subscriptionData.data.crawlJobUpdated
+
+                const exists = prev.getSiteCrawlJobs.find((job: any) => job.jobId === updatedJob.jobId)
+
+                if (exists) {
+                    return {
+                        ...prev,
+                        getSiteCrawlJobs: prev.getSiteCrawlJobs.map((job: any) =>
+                            job.jobId === updatedJob.jobId ? updatedJob : job
+                        ),
+                    }
+                } else {
+                    return {
+                        ...prev,
+                        getSiteCrawlJobs: [updatedJob, ...prev.getSiteCrawlJobs],
+                    }
+                }
+            },
+        })
+        return () => unsubscribe()
+    }, [subscribeToMore, siteId])
 
     if (loading && !data) {
         return (
@@ -74,13 +128,16 @@ export default function CrawlJobList({ siteId }: CrawlJobListProps) {
     return (
         <div className="space-y-4">
             {jobs.map((job) => (
-                <CrawlJobCard key={job.jobId} job={job} />
+                <CrawlJobCard key={job.jobId} job={job} onDelete={deleteCrawlJob} />
             ))}
         </div>
     )
 }
 
-function CrawlJobCard({ job }: { job: CrawlJob }) {
+function CrawlJobCard({ job, onDelete }: { job: CrawlJob, onDelete: (options: any) => void }) {
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+    const [isDeleting, setIsDeleting] = useState(false)
+
     const getStatusConfig = (status: CrawlJob['status']) => {
         switch (status) {
             case 'PENDING':
@@ -123,9 +180,31 @@ function CrawlJobCard({ job }: { job: CrawlJob }) {
     const Icon = config.icon
     const progress = job.pagesCrawled > 0 ? (job.pagesCrawled / (job.pagesDiscovered || 1)) * 100 : 0
 
+    const handleDelete = async () => {
+        setIsDeleting(true)
+        try {
+            await onDelete({ variables: { jobId: job.jobId } })
+        } catch (error) {
+            console.error(error)
+        } finally {
+            setIsDeleting(false)
+            setShowDeleteDialog(false)
+        }
+    }
+
     return (
-        <div className={`p-6 rounded-xl border ${config.border} ${config.bg} transition-all hover:scale-[1.02]`}>
-            <div className="flex items-start justify-between mb-4">
+        <div className={`p-6 rounded-xl border ${config.border} ${config.bg} transition-all hover:scale-[1.02] group relative`}>
+            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                    onClick={() => setShowDeleteDialog(true)}
+                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-full transition-colors"
+                    title="Delete Job & Data"
+                >
+                    <Trash2 className="w-4 h-4" />
+                </button>
+            </div>
+
+            <div className="flex items-start justify-between mb-4 pr-8">
                 <div className="flex items-center space-x-3">
                     <div className={`p-2 rounded-lg bg-white/50 dark:bg-black/20`}>
                         <Icon className={`w-5 h-5 ${config.color} ${config.animate || ''}`} />
@@ -196,6 +275,17 @@ function CrawlJobCard({ job }: { job: CrawlJob }) {
                     </div>
                 </div>
             )}
+
+            <ConfirmationDialog
+                isOpen={showDeleteDialog}
+                onClose={() => setShowDeleteDialog(false)}
+                onConfirm={handleDelete}
+                title="Delete Crawl Job"
+                message="Are you sure you want to delete this crawl job? This will also delete all vector data in Qdrant associated with this job."
+                confirmText="Delete Job"
+                isDestructive={true}
+                isLoading={isDeleting}
+            />
         </div>
     )
 }

@@ -16,7 +16,8 @@ import {
     Code,
     Webhook,
     FileText,
-    UserCircle
+    UserCircle,
+    MessageSquare
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 
@@ -65,6 +66,12 @@ export default function Sidebar({ currentSiteId }: SidebarProps) {
                     href: '/dashboard/sites',
                     icon: Globe,
                     description: 'Manage Sites'
+                },
+                {
+                    name: 'Intent Prompts',
+                    href: currentSiteId ? `/dashboard/sites/${currentSiteId}/prompts` : '/dashboard/intent-prompts',
+                    icon: MessageSquare,
+                    description: 'AI Behaviors'
                 }]
         },
         {

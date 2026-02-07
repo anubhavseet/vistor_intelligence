@@ -1,9 +1,10 @@
 import { Processor, Process, OnQueueActive, OnQueueCompleted, OnQueueFailed } from '@nestjs/bull';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import { Job } from 'bull';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { chromium, Browser } from 'playwright';
+import { PubSub } from 'graphql-subscriptions';
 import { CrawlJob, CrawlJobDocument, CrawlJobStatus } from '../../common/schemas/crawl-job.schema';
 import { QdrantService } from '../../qdrant/qdrant.service';
 import { GeminiService } from '../../ai-generation/gemini.service';
@@ -31,6 +32,7 @@ export class WebsiteCrawlerProcessor {
         @InjectModel(CrawlJob.name) private crawlJobModel: Model<CrawlJobDocument>,
         private qdrantService: QdrantService,
         private geminiService: GeminiService,
+        @Inject('PUB_SUB') private pubSub: PubSub,
     ) { }
 
     @OnQueueActive()
@@ -47,14 +49,17 @@ export class WebsiteCrawlerProcessor {
     async onFailed(job: Job<CrawlJobData>, error: Error) {
         this.logger.error(`Crawl job ${job.data.jobId} failed: ${error.message}`, error.stack);
 
-        await this.crawlJobModel.findOneAndUpdate(
+        const updatedJob = await this.crawlJobModel.findOneAndUpdate(
             { jobId: job.data.jobId },
             {
                 status: CrawlJobStatus.FAILED,
                 error: error.message,
                 completedAt: new Date(),
             },
+            { new: true }
         );
+
+        this.pubSub.publish('crawlJobUpdated', { crawlJobUpdated: updatedJob });
     }
 
     @Process('crawl-website')
@@ -64,13 +69,15 @@ export class WebsiteCrawlerProcessor {
         this.logger.log(`Starting crawl for ${startUrl} (Job: ${jobId})`);
 
         // Update job status to IN_PROGRESS
-        await this.crawlJobModel.findOneAndUpdate(
+        let currentJob = await this.crawlJobModel.findOneAndUpdate(
             { jobId },
             {
                 status: CrawlJobStatus.IN_PROGRESS,
                 startedAt: new Date(),
             },
+            { new: true }
         );
+        this.pubSub.publish('crawlJobUpdated', { crawlJobUpdated: currentJob });
 
         let browser: Browser | null = null;
         const visited = new Set<string>();
@@ -201,7 +208,7 @@ export class WebsiteCrawlerProcessor {
                     pagesCrawled++;
 
                     // Update progress
-                    await this.crawlJobModel.findOneAndUpdate(
+                    currentJob = await this.crawlJobModel.findOneAndUpdate(
                         { jobId },
                         {
                             pagesCrawled,
@@ -209,7 +216,9 @@ export class WebsiteCrawlerProcessor {
                             urlsCrawled: Array.from(visited),
                             urlsQueued: queue.map(p => p.url),
                         },
+                        { new: true }
                     );
+                    this.pubSub.publish('crawlJobUpdated', { crawlJobUpdated: currentJob });
 
                     // Update job progress
                     const progress = Math.min((pagesCrawled / maxPages) * 100, 100);
@@ -222,15 +231,17 @@ export class WebsiteCrawlerProcessor {
                     pagesFailed++;
                     this.logger.error(`Failed to crawl ${url}:`, err);
 
-                    await this.crawlJobModel.findOneAndUpdate(
+                    currentJob = await this.crawlJobModel.findOneAndUpdate(
                         { jobId },
                         { pagesFailed },
+                        { new: true }
                     );
+                    this.pubSub.publish('crawlJobUpdated', { crawlJobUpdated: currentJob });
                 }
             }
 
             // Mark job as completed
-            await this.crawlJobModel.findOneAndUpdate(
+            currentJob = await this.crawlJobModel.findOneAndUpdate(
                 { jobId },
                 {
                     status: CrawlJobStatus.COMPLETED,
@@ -239,7 +250,9 @@ export class WebsiteCrawlerProcessor {
                     pagesFailed,
                     pagesDiscovered: visited.size,
                 },
+                { new: true }
             );
+            this.pubSub.publish('crawlJobUpdated', { crawlJobUpdated: currentJob });
 
             this.logger.log(
                 `Crawl completed for ${startUrl}. Pages crawled: ${pagesCrawled}, Failed: ${pagesFailed}`
@@ -254,14 +267,16 @@ export class WebsiteCrawlerProcessor {
         } catch (error) {
             this.logger.error(`Critical error during crawl job ${jobId}:`, error);
 
-            await this.crawlJobModel.findOneAndUpdate(
+            const failedJob = await this.crawlJobModel.findOneAndUpdate(
                 { jobId },
                 {
                     status: CrawlJobStatus.FAILED,
                     error: error.message,
                     completedAt: new Date(),
                 },
+                { new: true }
             );
+            this.pubSub.publish('crawlJobUpdated', { crawlJobUpdated: failedJob });
 
             throw error;
         } finally {

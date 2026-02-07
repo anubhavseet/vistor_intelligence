@@ -244,8 +244,10 @@ export default function IntentPromptsPage() {
     }
 
     const getPreviewSrcDoc = () => {
-        // Simple escape for script tags to prevent breaking the preview HTML
+        // Safe JS injection with escaping
         const safeJs = formData.generatedJs ? formData.generatedJs.replace(/<\/script>/gi, '<\\/script>') : '';
+        const safeHtml = formData.generatedHtml ? formData.generatedHtml.replace(/`/g, '\\`').replace(/\$/g, '\\$') : '';
+        const safeCss = formData.generatedCss ? formData.generatedCss.replace(/`/g, '\\`') : '';
 
         return `
             <!DOCTYPE html>
@@ -253,67 +255,70 @@ export default function IntentPromptsPage() {
             <head>
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <!-- Load Fonts -->
                 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-                <!-- Tailwind -->
                 <script src="https://cdn.tailwindcss.com"></script>
                 <style>
-                    /* Basic Reset & Font */
-                    *, *::before, *::after { box-sizing: border-box; }
-                    body { 
-                        margin: 0; 
-                        padding: 1rem; 
-                        font-family: 'Inter', system-ui, -apple-system, sans-serif; 
-                        background-color: transparent; /* Allow iframe bg to show through or be white */
-                    }
-                    
+                    body { margin: 0; padding: 20px; font-family: 'Inter', sans-serif; background: transparent; }
+                    #vi-preview-root { position: relative; width: 100%; min-height: 200px; display: block; }
                     /* Error Banner */
                     #vi-preview-error {
-                        display: none;
-                        background-color: #fee2e2;
-                        border: 1px solid #ef4444;
-                        color: #b91c1c;
-                        padding: 0.75rem;
-                        border-radius: 0.5rem;
-                        margin-bottom: 1rem;
-                        font-size: 0.875rem;
-                        white-space: pre-wrap;
+                        display: none; background-color: #fee2e2; border: 1px solid #ef4444; color: #b91c1c;
+                        padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; white-space: pre-wrap; font-family: monospace;
                     }
-
-                    /* Custom AI Generated CSS */
-                    ${formData.generatedCss}
+                    /* Injected CSS */
+                    ${safeCss}
                 </style>
             </head>
             <body>
                 <div id="vi-preview-error"></div>
-                ${formData.generatedHtml || '<div class="text-gray-500 text-center p-4">No content generated yet.</div>'}
-                
+                <!-- The Host Element -->
+                <div id="vi-preview-root"></div>
+
                 <script>
-                    // Error Handling
-                    window.onerror = function(msg, url, lineNo, columnNo, error) {
-                        const errorDiv = document.getElementById('vi-preview-error');
-                        errorDiv.style.display = 'block';
-                        errorDiv.textContent = 'Preview Error: ' + msg;
-                        console.error('Preview Error:', error);
+                    const errorBanner = document.getElementById('vi-preview-error');
+                    function showError(msg, source) {
+                        errorBanner.style.display = 'block';
+                        errorBanner.textContent += (source ? '[' + source + '] ' : '') + msg + '\\n';
+                        console.error(msg);
+                    }
+
+                    window.onerror = function(msg, url, line, col, error) {
+                        showError(msg + ' (Line ' + line + ')', 'Global');
                         return false;
                     };
 
-                    // Execute AI Generated JS safely
-                    document.addEventListener('DOMContentLoaded', () => {
-                        try {
-                            console.log("Executing AI Generated JS...");
-                            ${safeJs}
-                        } catch(e) {
-                            console.error("AI JS Runtime Error:", e);
-                            const errorDiv = document.getElementById('vi-preview-error');
-                            errorDiv.style.display = 'block';
-                            errorDiv.textContent = 'JS Runtime Error: ' + e.message;
-                        }
-                    });
+                    try {
+                        const host = document.getElementById('vi-preview-root');
+                        
+                        // 1. Inject HTML directly
+                        host.innerHTML = \`
+                            ${safeHtml || '<div style="color:#666;text-align:center;padding:20px;">No content generated.</div>'}
+                        \`;
+
+                        // 2. Prepare Context for JS (Optional isolation)
+                        // In this iframe mode, we can mostly trust the document, but let's keep the concept of scoping if possible,
+                        // or just pass document since it's an iframe.
+                        
+                        // 3. Inject JS safely
+                        const runUserScript = new Function('document', \`
+                            try {
+                                ${safeJs}
+                            } catch(e) {
+                                throw e;
+                            }
+                        \`);
+
+                        // Execute
+                        runUserScript(document);
+                        console.log("Preview: AI UI Injected successfully");
+
+                    } catch (e) {
+                         showError(e.message, 'Preview Initialization');
+                    }
                 </script>
             </body>
             </html>
-        `
+        `;
     }
 
     if (loading && !data) return <div className="p-8 text-center text-muted-foreground">Loading prompts...</div>

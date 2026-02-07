@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { CrawlJob, CrawlJobDocument, CrawlJobStatus } from '../common/schemas/crawl-job.schema';
 import { StartCrawlInput } from './dto/start-crawl.input';
 import { CrawlJobStatus as CrawlStatusType } from './dto/crawl-status.type';
+import { QdrantService } from '../qdrant/qdrant.service';
 
 @Injectable()
 export class CrawlerService {
@@ -15,6 +16,7 @@ export class CrawlerService {
     constructor(
         @InjectQueue('website-crawler') private crawlQueue: Queue,
         @InjectModel(CrawlJob.name) private crawlJobModel: Model<CrawlJobDocument>,
+        private qdrantService: QdrantService,
     ) { }
 
     /**
@@ -165,5 +167,35 @@ export class CrawlerService {
             failed,
             total: waiting + active,
         };
+    }
+
+    /**
+     * Delete a crawl job and its associated data
+     */
+    async deleteCrawlJob(jobId: string): Promise<boolean> {
+        const job = await this.getCrawlStatus(jobId);
+
+        // 1. Remove from queue if pending
+        if (job.status === CrawlJobStatus.PENDING || job.status === CrawlJobStatus.IN_PROGRESS) {
+            await this.cancelCrawl(jobId);
+        }
+
+        // 2. Delete from Qdrant
+        await this.qdrantService.deletePoints({
+            must: [
+                {
+                    key: "crawlJobId",
+                    match: {
+                        value: jobId
+                    }
+                }
+            ]
+        });
+
+        // 3. Delete from DB
+        await this.crawlJobModel.deleteOne({ jobId });
+
+        this.logger.log(`Deleted crawl job ${jobId} and associated entries`);
+        return true;
     }
 }

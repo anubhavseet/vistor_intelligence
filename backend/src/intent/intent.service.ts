@@ -201,12 +201,12 @@ export class IntentService {
 
     if (exitIntent) {
       if (category === 'Lead') {
-        suggestedAction = 'discount_modal';
+        suggestedAction = 'Create a high-converting "Wait! Don\'t Go" exit-intent modal offering a special 10% discount code to retain the user.';
       }
       // If Bouncer, do nothing (null)
     } else {
-      if (score > 80) suggestedAction = 'priority_support_chat';
-      else if (score > 50) suggestedAction = 'lure_custoumers_to_contact_Us_with_discount_or_offer';
+      if (score > 80) suggestedAction = 'Generate a sophisticated, non-intrusive priority support chat invitation widget floating at the bottom right.';
+      else if (score > 50) suggestedAction = 'Create a subtle slide-in notification suggesting they contact us for a personalized offer.';
     }
 
     return { score, category, suggestedAction };

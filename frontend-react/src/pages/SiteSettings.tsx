@@ -21,6 +21,7 @@ import {
     Plus,
     X
 } from 'lucide-react'
+import ConfirmationDialog from '../components/ConfirmationDialog'
 
 export default function SiteSettingsPage() {
     const navigate = useNavigate()
@@ -123,20 +124,20 @@ export default function SiteSettingsPage() {
         }
     }
 
-    const handleDelete = async () => {
-        if (showDeleteConfirm) {
-            setDeleting(true)
-            try {
-                await deleteSite()
-                navigate('/dashboard/sites')
-                toast.success('Site deleted successfully')
-            } catch (err: any) {
-                toast.error('Failed to delete site: ' + err.message)
-                setDeleting(false)
-            }
-        } else {
-            setShowDeleteConfirm(true)
-            setTimeout(() => setShowDeleteConfirm(false), 5000)
+    const handleDelete = () => {
+        setShowDeleteConfirm(true)
+    }
+
+    const performDelete = async () => {
+        setDeleting(true)
+        try {
+            await deleteSite()
+            navigate('/dashboard/sites')
+            toast.success('Site deleted successfully')
+        } catch (err: any) {
+            toast.error('Failed to delete site: ' + err.message)
+            setDeleting(false)
+            setShowDeleteConfirm(false)
         }
     }
 
@@ -563,33 +564,30 @@ export default function SiteSettingsPage() {
                     <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6">
                         <h3 className="text-lg font-bold text-destructive mb-4">Danger Zone</h3>
                         <p className="text-sm text-muted-foreground mb-4">
-                            Deleting this site will disable tracking and remove all associated data.
+                            Deleting this site will disable tracking and permanently remove all associated data, including indexed content in Qdrant.
                         </p>
                         <button
                             onClick={handleDelete}
                             disabled={deleting}
-                            className={cn(
-                                "w-full inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2",
-                                showDeleteConfirm
-                                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                                    : 'border border-destructive bg-transparent hover:bg-destructive/10 text-destructive'
-                            )}
+                            className="w-full inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                            {deleting ? (
-                                <>
-                                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                    <span>Deleting...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    <span>{showDeleteConfirm ? 'Click Again to Confirm' : 'Delete Site'}</span>
-                                </>
-                            )}
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            <span>Delete Site</span>
                         </button>
                     </div>
                 </div>
             </div>
+
+            <ConfirmationDialog
+                isOpen={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={performDelete}
+                title="Delete Project"
+                message="Are you sure you want to delete this project? This will permanently delete the project and all associated Qdrant data."
+                confirmText="Delete Project"
+                isDestructive={true}
+                isLoading={deleting}
+            />
         </div>
     )
 }

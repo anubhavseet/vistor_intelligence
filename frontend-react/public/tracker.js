@@ -368,11 +368,7 @@
         host.id = 'vi-ai-host';
         host.style.cssText = "position: relative; z-index: 2147483647;";
         const shadow = host.attachShadow({ mode: 'open' });
-        if (javascript_payload) {
-            const script = document.createElement('script');
-            script.textContent = javascript_payload;
-            shadow.appendChild(script);
-        }
+
         shadow.innerHTML = `
     <style>
       ${scoped_css}
@@ -392,6 +388,41 @@
       ${html_payload}
     </div>
   `;
+
+        // Inject JS *after* HTML is ready
+        if (javascript_payload) {
+            const script = document.createElement('script');
+            // Wrap in a closure and proxy 'document' to point to shadowRoot for selectors
+            script.textContent = `
+                (function() {
+                    const host = document.getElementById('vi-ai-host');
+                    if (!host || !host.shadowRoot) return;
+                    const shadow = host.shadowRoot;
+                    
+                    const docProxy = new Proxy(document, {
+                        get: (target, prop) => {
+                            // Redirect selector methods to shadow root
+                            if (['getElementById', 'querySelector', 'querySelectorAll'].includes(prop)) {
+                                return shadow[prop].bind(shadow);
+                            }
+                            // Fallback for everything else (createElement, head, body, etc.)
+                            const val = target[prop];
+                            return typeof val === 'function' ? val.bind(target) : val;
+                        }
+                    });
+
+                    // Execute payload with hijacked document
+                    (function(document) {
+                        try {
+                            ${javascript_payload}
+                        } catch(e) {
+                            console.error("Tracker: AI JS Error", e);
+                        }
+                    })(docProxy);
+                })();
+            `;
+            shadow.appendChild(script);
+        }
 
         if (injection_target_selector === 'body') {
             Object.assign(host.style, {
@@ -443,7 +474,9 @@
             }
 
             // 2. Check Allowed Domains
-            if (config.allowedDomains && config.allowedDomains.length > 0) {
+            if (window.VI_DEV_MODE) {
+                console.log("Tracker: Dev Mode detected. Bypassing domain check.");
+            } else if (config.allowedDomains && config.allowedDomains.length > 0) {
                 const currentDomain = window.location.hostname;
                 const isAllowed = config.allowedDomains.some(d => currentDomain.includes(d) || d.includes(currentDomain));
                 if (!isAllowed) {

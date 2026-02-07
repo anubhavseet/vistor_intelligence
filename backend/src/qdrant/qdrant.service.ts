@@ -78,4 +78,16 @@ export class QdrantService implements OnModuleInit {
             throw error;
         }
     }
+
+    async deletePoints(filter: any) {
+        try {
+            this.logger.log(`Deleting points with filter: ${JSON.stringify(filter)}`);
+            await this.client.delete(this.collectionName, {
+                filter,
+            });
+        } catch (error) {
+            this.logger.error('Error deleting points from Qdrant', error);
+            throw error;
+        }
+    }
 }

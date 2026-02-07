@@ -1,4 +1,4 @@
-import { Resolver, Query, Args, Subscription } from '@nestjs/graphql';
+import { Resolver, Query, Args, Subscription, Int } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { AnalyticsService } from './analytics.service';
@@ -14,7 +14,7 @@ const pubSub = new PubSub();
 @Resolver()
 @UseGuards(JwtAuthGuard)
 export class AnalyticsResolver {
-  constructor(private analyticsService: AnalyticsService) {}
+  constructor(private analyticsService: AnalyticsService) { }
 
   @Query(() => [VisitorSession])
   async getLiveVisitors(@Args('siteId') siteId: string): Promise<VisitorSession[]> {
@@ -53,7 +53,7 @@ export class AnalyticsResolver {
   @Query(() => [EngagementTrend])
   async getEngagementTrends(
     @Args('siteId') siteId: string,
-    @Args('days', { nullable: true, defaultValue: 30 }) days: number,
+    @Args('days', { type: () => Int, nullable: true, defaultValue: 30 }) days: number,
   ): Promise<EngagementTrend[]> {
     return this.analyticsService.getEngagementTrends(siteId, days);
   }

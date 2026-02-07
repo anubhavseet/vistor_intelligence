@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, User, AmpersandIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -26,6 +26,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
             children: [
                 { name: "All Sites", href: "/dashboard/sites", icon: Globe },
                 { name: "Crawling", href: "/dashboard/crawling", icon: Globe },
+                { name: "Intent Prompts", href: "/dashboard/intent-prompts", icon: AmpersandIcon },
                 { name: "Tracking Code", href: "/dashboard/tracking-code", icon: Code },
                 { name: "Integrations", href: "/dashboard/integrations", icon: Puzzle },
             ]
@@ -38,7 +39,13 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                 { name: "Site Analytics", href: "/dashboard/site-analytics", icon: LineChart },
             ]
         },
-        { name: "Settings", href: "/dashboard/settings", icon: Settings },
+        {
+            name: "Management",
+            icon: Settings,
+            children: [
+                { name: "Settings", href: "/dashboard/settings", icon: Settings },
+            ]
+        },
     ];
 
     return (

@@ -3,11 +3,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Site, SiteDocument } from '../common/schemas/site.schema';
+import { QdrantService } from '../qdrant/qdrant.service';
 
 @Injectable()
 export class SitesService {
   constructor(
     @InjectModel(Site.name) private siteModel: Model<SiteDocument>,
+    private qdrantService: QdrantService,
   ) { }
 
   async createSite(userId: string, name: string, domain?: string): Promise<Site> {
@@ -73,6 +75,18 @@ export class SitesService {
     // Soft delete by setting isActive to false
     site.isActive = false;
     await site.save();
+
+    // Cleanup Qdrant Data
+    await this.qdrantService.deletePoints({
+      must: [
+        {
+          key: "siteId",
+          match: {
+            value: siteId
+          }
+        }
+      ]
+    });
   }
 
   async regenerateApiKey(userId: string, siteId: string): Promise<Site> {
