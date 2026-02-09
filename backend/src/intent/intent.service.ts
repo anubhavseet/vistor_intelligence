@@ -175,13 +175,15 @@ export class IntentService {
             uiPayload = await this.geminiService.generateUiElement(
               instruction,
               (context.raw_html as string) || "",
-              (context.description as string) || "Standard business website"
+              (context.description as string) || "Standard business website",
+              site.designSystem
             );
           } else {
             uiPayload = await this.geminiService.generateUiElement(
               instruction,
               "",
-              "Standard business website"
+              "Standard business website",
+              site.designSystem
             );
           }
         }

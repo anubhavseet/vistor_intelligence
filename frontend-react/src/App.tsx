@@ -7,8 +7,15 @@ import { Layout } from '@/components/layout/Layout'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 
-// Pages
-import HomePage from '@/pages/Home'
+// Public Pages
+import LandingPage from '@/pages/Landing'
+import LoginPage from '@/pages/Login'
+import RegisterPage from '@/pages/Register'
+import PrivacyPolicyPage from '@/pages/PrivacyPolicy'
+import TermsOfServicePage from '@/pages/TermsOfService'
+import AboutPage from '@/pages/About'
+
+// Dashboard Pages
 import DashboardPage from '@/pages/Dashboard'
 import SitesPage from '@/pages/Sites'
 import SiteOverviewPage from '@/pages/SiteOverview'
@@ -18,7 +25,6 @@ import TrackingCodePage from '@/pages/TrackingCode'
 import IntegrationsPage from '@/pages/Integrations'
 import ReportsPage from '@/pages/Reports'
 import SettingsPage from '@/pages/Settings'
-// SiteDetailPage seems redundant with SiteOverviewPage or distinct? keeping for now.
 import SiteDetailPage from '@/pages/SiteDetail'
 import SiteAnalyticsListPage from '@/pages/dashboard/SiteAnalyticsList'
 import IntentPromptsPage from '@/pages/IntentPromptsPage'
@@ -30,7 +36,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/login" replace />
   }
 
   return <>{children}</>
@@ -43,7 +49,12 @@ function App() {
         <ToastContainer theme="dark" position="bottom-right" />
         <Routes>
           {/* Public Routes */}
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsOfServicePage />} />
+          <Route path="/about" element={<AboutPage />} />
 
           {/* Protected Dashboard Routes */}
           <Route

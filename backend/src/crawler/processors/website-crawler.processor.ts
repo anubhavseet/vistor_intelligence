@@ -9,6 +9,7 @@ import { CrawlJob, CrawlJobDocument, CrawlJobStatus } from '../../common/schemas
 import { QdrantService } from '../../qdrant/qdrant.service';
 import { GeminiService } from '../../ai-generation/gemini.service';
 import { v4 as uuidv4 } from 'uuid';
+import { Site, SiteDocument } from '../../common/schemas/site.schema';
 
 interface CrawlJobData {
     jobId: string;
@@ -30,6 +31,7 @@ export class WebsiteCrawlerProcessor {
 
     constructor(
         @InjectModel(CrawlJob.name) private crawlJobModel: Model<CrawlJobDocument>,
+        @InjectModel(Site.name) private siteModel: Model<SiteDocument>,
         private qdrantService: QdrantService,
         private geminiService: GeminiService,
         @Inject('PUB_SUB') private pubSub: PubSub,
@@ -124,6 +126,59 @@ export class WebsiteCrawlerProcessor {
                         waitUntil: 'networkidle',
                         timeout: 30000,
                     });
+
+                    // Extract design tokens if this is the start URL
+                    if (url === startUrl) {
+                        try {
+                            const designSystem = await page.evaluate(() => {
+                                const getStyle = (el: Element, prop: string) => window.getComputedStyle(el).getPropertyValue(prop);
+
+                                const body = document.body;
+                                const fontFamily = getStyle(body, 'font-family');
+                                const backgroundColor = getStyle(body, 'background-color');
+                                const textColor = getStyle(body, 'color');
+
+                                // Find primary button candidates
+                                const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"], a[class*="button"], input[type="submit"]'));
+
+                                // Heuristic: Find button with "primary" in class, or largest/most colorful
+                                let primaryButton = buttons.find(b => b.className.toLowerCase().includes('primary')) || buttons[0];
+
+                                let primaryColor = '#000000';
+                                let secondaryColor = '#ffffff';
+                                let borderRadius = '4px';
+                                let buttonContext = 'primary-button';
+
+                                if (primaryButton) {
+                                    try {
+                                        const style = window.getComputedStyle(primaryButton);
+                                        primaryColor = style.backgroundColor;
+                                        secondaryColor = style.color;
+                                        borderRadius = style.borderRadius;
+                                    } catch (e) { }
+                                }
+
+                                return {
+                                    fontFamily,
+                                    backgroundColor,
+                                    textColor,
+                                    primaryColor,
+                                    secondaryColor,
+                                    borderRadius,
+                                };
+                            });
+
+                            if (designSystem) {
+                                await this.siteModel.updateOne(
+                                    { siteId },
+                                    { $set: { designSystem } }
+                                );
+                                this.logger.log(`Extracted and saved design system for site ${siteId}`);
+                            }
+                        } catch (e) {
+                            this.logger.warn(`Failed to extract design tokens: ${e.message}`);
+                        }
+                    }
 
                     // Extract page content and links
                     const pageData = await page.evaluate(() => {

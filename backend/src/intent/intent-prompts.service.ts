@@ -5,13 +5,15 @@ import { IntentPrompt, IntentPromptDocument } from './schemas/intent-prompt.sche
 import { CreateIntentPromptInput, UpdateIntentPromptInput } from './dto/intent-prompt.input';
 import { GeminiService } from '../ai-generation/gemini.service';
 import { QdrantService } from '../qdrant/qdrant.service';
+import { SitesService } from '../sites/sites.service';
 
 @Injectable()
 export class IntentPromptsService {
     constructor(
         @InjectModel(IntentPrompt.name) private intentPromptModel: Model<IntentPromptDocument>,
         private geminiService: GeminiService,
-        private qdrantService: QdrantService
+        private qdrantService: QdrantService,
+        private sitesService: SitesService
     ) { }
 
     async create(input: CreateIntentPromptInput): Promise<IntentPrompt> {
@@ -40,10 +42,12 @@ export class IntentPromptsService {
                 contextDesc = searchResults[0].payload.description as string || "";
             }
 
+            const site = await this.sitesService.getSiteBySiteId(input.siteId);
             const uiPayload = await this.geminiService.generateUiElement(
                 input.prompt,
                 contextHtml,
-                contextDesc
+                contextDesc,
+                site.designSystem
             );
 
             created.generatedHtml = uiPayload.html_payload;
@@ -102,16 +106,19 @@ export class IntentPromptsService {
             contextDesc = searchResults[0].payload.description as string || "";
         }
 
+        const site = await this.sitesService.getSiteBySiteId(siteId);
+
         const uiPayload = await this.geminiService.generateUiElement(
-            `Generate UI for ${intent} based on this instruction: ${prompt}`, // effectively logic is based on this instruction
+            `Generate UI for ${intent} based on this instruction: ${prompt}`,
             contextHtml,
-            contextDesc
+            contextDesc,
+            site.designSystem
         );
 
         return {
             html: uiPayload.html_payload,
             css: uiPayload.scoped_css,
-            js: uiPayload.javascript_payload
+            js: uiPayload.javascript_payload || ''
         };
     }
 }

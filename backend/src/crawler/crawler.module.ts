@@ -8,6 +8,7 @@ import { WebsiteCrawlerProcessor } from './processors/website-crawler.processor'
 import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { QdrantModule } from '../qdrant/qdrant.module';
 import { CrawlJob, CrawlJobSchema } from '../common/schemas/crawl-job.schema';
+import { Site, SiteSchema } from '../common/schemas/site.schema';
 
 @Module({
     imports: [
@@ -16,6 +17,7 @@ import { CrawlJob, CrawlJobSchema } from '../common/schemas/crawl-job.schema';
         }),
         MongooseModule.forFeature([
             { name: CrawlJob.name, schema: CrawlJobSchema },
+            { name: Site.name, schema: SiteSchema },
         ]),
         AiGenerationModule,
         QdrantModule,

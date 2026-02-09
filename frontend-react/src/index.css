@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -41,72 +42,42 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  color-scheme: dark;
 
-  /* Off-white background (Cool Grey) - distinct from white cards */
-  --background: 220 14% 94%;
-  --foreground: 224 71.4% 4.1%;
+  /* Vercel-ish Dark Theme */
+  --background: 0 0% 0%;
+  /* Pure Black */
+  --foreground: 0 0% 100%;
 
-  /* Pure white cards for contrast */
-  --card: 0 0% 100%;
-  --card-foreground: 224 71.4% 4.1%;
+  --card: 0 0% 3%;
+  --card-foreground: 0 0% 100%;
 
-  --popover: 0 0% 100%;
-  --popover-foreground: 224 71.4% 4.1%;
+  --popover: 0 0% 3%;
+  --popover-foreground: 0 0% 100%;
 
-  /* Vibrant Violet Primary */
-  --primary: 262 83% 58%;
-  --primary-foreground: 210 40% 98%;
+  /* Vercel Blue */
+  --primary: 212 100% 48%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 14.3% 95.9%;
-  --secondary-foreground: 220.9 39.3% 11%;
+  --secondary: 0 0% 9%;
+  --secondary-foreground: 0 0% 100%;
 
-  --muted: 220 14.3% 95.9%;
-  --muted-foreground: 220 8.9% 46.1%;
+  --muted: 0 0% 9%;
+  --muted-foreground: 0 0% 40%;
+  /* Distinctive dark gray text */
 
-  --accent: 220 14.3% 95.9%;
-  --accent-foreground: 220.9 39.3% 11%;
+  --accent: 0 0% 9%;
+  --accent-foreground: 0 0% 100%;
 
   --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive-foreground: 0 0% 98%;
 
-  /* Darker borders for better definition */
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
-  --ring: 221.2 83.2% 53.3%;
+  --border: 0 0% 12%;
+  /* Very subtle borders */
+  --input: 0 0% 12%;
+  --ring: 212 100% 48%;
 
   --radius: 0.5rem;
-}
-
-.dark {
-  /* Deep Purple-Black Background */
-  --background: 260 50% 5%;
-  --foreground: 210 40% 98%;
-
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-
-  --primary: 262 80% 65%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
 }
 
 @layer base {
@@ -115,24 +86,103 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "ss02", "cv01", "cv02";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  html {
+    scroll-behavior: smooth;
   }
 }
 
 @layer utilities {
+
+  /* The "Geist" Gradient */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-orange-500;
+    background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.7) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
-  .bg-gradient-primary {
-    @apply bg-gradient-to-r from-violet-600 to-indigo-600;
+  .text-gradient-blue {
+    background: linear-gradient(180deg, #3291ff 0%, #0070f3 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
-  .glass-panel {
-    @apply bg-white/5 backdrop-blur-lg border border-white/10 shadow-xl;
+  /* Grid Background Utility */
+  .bg-grid {
+    background-size: 40px 40px;
+    background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   }
 
-  .glass-card-hover {
-    @apply hover:bg-white/10 transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl hover:shadow-purple-500/20;
+  .bg-grid-small {
+    background-size: 20px 20px;
+    background-image: linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  }
+
+  /* The "Glass" Card */
+  .glass-card {
+    @apply bg-black/50 backdrop-blur-md border border-white/10 shadow-2xl;
+  }
+
+  /* Glow effects */
+  .glow-point {
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(0, 112, 243, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .hero-glow {
+    background: radial-gradient(circle at 50% 0%, rgba(0, 112, 243, 0.15), transparent 60%);
+  }
+
+  /* Animation Utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.8s ease-out forwards;
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  @keyframes fadeIn {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+
+  /* Infinite Marquee */
+  @keyframes marquee {
+    0% {
+      transform: translateX(0);
+    }
+
+    100% {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-marquee {
+    animation: marquee 30s linear infinite;
   }
 }

@@ -57,6 +57,20 @@ export class Site {
 
   @Prop()
   apiKey?: string; // API key for tracking endpoint authentication
+
+  @Prop({
+    type: Object,
+    default: {}
+  })
+  designSystem?: {
+    primaryColor?: string;
+    secondaryColor?: string;
+    fontFamily?: string;
+    borderRadius?: string;
+    buttonBackground?: string;
+    buttonTextColor?: string;
+    logoUrl?: string;
+  };
   save: any;
 }
 

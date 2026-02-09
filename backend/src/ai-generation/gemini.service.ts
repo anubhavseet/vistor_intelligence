@@ -84,8 +84,21 @@ export class GeminiService {
     async generateUiElement(
         userIntent: string,
         siteContextHtml: string,
-        siteDesignDescription: string
+        siteDesignDescription: string,
+        designSystem?: any
     ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string; javascript_payload: string }> {
+
+        let designContext = `Site Design/Style: "${siteDesignDescription}"`;
+        if (designSystem) {
+            designContext += `\n
+            CRITICAL DESIGN TOKENS (YOU MUST USE THESE):
+            - Primary Action Color: ${designSystem.primaryColor} (Use for buttons, links, highlights)
+            - Font Family: ${designSystem.fontFamily} (Apply to :host)
+            - Border Radius: ${designSystem.borderRadius}
+            - Background: ${designSystem.backgroundColor}
+            - Text Color: ${designSystem.textColor}
+            `;
+        }
 
         const prompt = `
       You are an Elite Frontend Engineer and World-Class UI/UX Designer.
@@ -93,17 +106,18 @@ export class GeminiService {
       Context:
       User Intent: "${userIntent}"
       Current Page Section Context (HTML): "${siteContextHtml.substring(0, 1000)}..."
-      Site Design/Style: "${siteDesignDescription}"
+      ${designContext}
 
       Objective:
       Generate a STUNNING, HIGH-PERFORMANCE UI component to address the user's intent. 
       This component will be injected into a Shadow DOM host on a client's website.
+      It MUST feel NATIVE to the host site by using the provided design tokens exactly.
 
       Design Guidelines (MANDATORY):
-      1. **Aesthetics**: Use "Premium Modern" design. Think Stripe, Apple, or Linear.
-         - Use subtle glassmorphism (backdrop-filter: blur).
+      1. **Aesthetics**: Use "Premium Modern" design.
+         - IF design tokens are provided, use them strictly.
+         - Unless specified otherwise, use subtle glassmorphism (backdrop-filter: blur).
          - Use modern gradients and profound drop shadows (box-shadow: 0 10px 30px -10px rgba(...)).
-         - Typography should be clean (system-ui, -apple-system, Inter).
          - Animations: Add smooth entry animations (e.g., fade-in-up) using CSS @keyframes.
       2. **Layout**:
          - The component is isolated in a Shadow DOM.
@@ -115,11 +129,11 @@ export class GeminiService {
       Technical Constraints (CRITICAL):
       1. **Shadow DOM Environment**:
          - DO NOT try to style 'body' or 'html'.
-         - CSS classes are scoped, so you can use simple class names (e.g., .card, .btn) without fear of collision.
+         - CSS classes are scoped.
+         - Use the extracted font-family in :host.
       2. **JavaScript**:
          - Write standard Vanilla JS.
-         - The environment proxies 'document' to the Shadow Root, so 'document.getElementById' WORKS within the shadow context.
-         - DO NOT assume external libraries (jQuery, Bootstrap) exist. Write everything from scratch.
+         - The environment proxies 'document' to the Shadow Root.
          - ALWAYS add a closing mechanism.
       3. **Closing Mechanism**:
          - You MUST include a close button with class "vi-internal-close".
