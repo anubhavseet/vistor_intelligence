@@ -190,6 +190,9 @@ export class WebsiteCrawlerProcessor {
                             });
 
                             this.logger.debug(`Indexed section ${section.selector} from ${url}`);
+
+                            // Add a delay to avoid API rate limits (2 seconds)
+                            await new Promise(resolve => setTimeout(resolve, 2000));
                         } catch (err) {
                             this.logger.error(`Error indexing section from ${url}:`, err);
                         }

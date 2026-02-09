@@ -8,12 +8,16 @@ import { SitesService } from '../sites/sites.service';
 export interface SignalBatch {
   dwell_time: Record<string, number>;
   scroll_velocity: number;
+  scroll_depth?: number; // New
   hesitation_event: boolean;
   rage_clicks: number;
   copy_text: string[];
+  text_selections?: string[]; // New
+  dead_clicks?: any[]; // New
   events: { type: string; timestamp: number }[];
   interactions?: Record<string, { clicks: number; hovers: number; inputs: number; last_timestamp: number }>;
   url?: string;
+  referrer?: string; // New
 }
 
 export interface IntentResult {
@@ -92,17 +96,30 @@ export class IntentService {
           let queryText = "General interest in product";
           const interests: string[] = [];
 
+          // 1. Text Copy (Strongest)
           if (signals.copy_text && signals.copy_text.length > 0) {
             interests.push(...signals.copy_text);
           }
 
+          // 2. Text Selection (Strong)
+          if (signals.text_selections && signals.text_selections.length > 0) {
+            interests.push(...signals.text_selections);
+          }
+
+          // 3. Dwell Time (Medium)
           if (signals.dwell_time) {
             const sortedDwell = Object.entries(signals.dwell_time)
               .sort(([, a], [, b]) => b - a)
               .slice(0, 3);
             if (sortedDwell.length > 0) {
-              interests.push(...sortedDwell.map(([id]) => id));
+              interests.push(...sortedDwell.map(([id]) => id.replace(/-/g, ' ')));
             }
+          }
+
+          // 4. Dead Clicks (Frustration Context)
+          if (signals.dead_clicks && signals.dead_clicks.length > 0) {
+            // Maybe search for what they clicked on? For now, we use it to adjust tone.
+            interests.push(`User frustrated interacting with ${signals.dead_clicks[0].selector}`);
           }
 
           if (interests.length > 0) {
@@ -117,20 +134,38 @@ export class IntentService {
               { key: "siteId", match: { value: siteId } }
             ]
           };
-
-          if (signals.url) {
+          if (signals.url.includes("localhost")) {
+            console.log(`${site.domain}/${signals.url.split("/")[3]}`)
+            filters.must.push({ key: "url", match: { value: `${site.domain}${signals.url.split("/")[3]}` } });
+          } else if (signals.url) {
             filters.must.push({ key: "url", match: { value: signals.url } });
           }
 
           const searchResults = await this.qdrantService.search(embedding, filters, 1);
           const context = searchResults.length > 0 ? searchResults[0].payload : null;
-
+          console.log("Context:", context);
           // C. Fetch Custom Prompt
           let instruction = suggestedAction || "High intent engagement";
+
+          // Enhance instruction with behavioral narrative
+          let behaviorNarrative = "";
+          if (signals.scroll_depth && signals.scroll_depth > 80) behaviorNarrative += "User has read the entire page. ";
+          if (signals.text_selections && signals.text_selections.length > 0) behaviorNarrative += `User highlighted terms: "${signals.text_selections.slice(0, 3).join(', ')}". `;
+          if (signals.dead_clicks && signals.dead_clicks.length > 0) behaviorNarrative += "User appears frustrated, clicking on static elements. Offer help. ";
+          if (signals.referrer) {
+            try {
+              const currentHost = signals.url ? new URL(signals.url).hostname : '';
+              const refHost = new URL(signals.referrer).hostname;
+              if (currentHost && refHost !== currentHost) behaviorNarrative += `Incoming from: ${signals.referrer}. `;
+            } catch (e) { }
+          }
+
+          if (behaviorNarrative) instruction += ` Context: ${behaviorNarrative}`;
+
           if (intentKey) {
             const customPrompt = await this.intentPromptsService.getPromptForIntent(siteId, intentKey);
             if (customPrompt) {
-              instruction = customPrompt.prompt;
+              instruction = customPrompt.prompt + ` Context: ${behaviorNarrative}`;
               this.logger.log(`Using custom prompt for intent '${intentKey}': ${instruction.substring(0, 50)}...`);
             }
           }
@@ -182,7 +217,20 @@ export class IntentService {
     // 2. Behavioral Signals
     if (signals.scroll_velocity > 2000) score -= 10; // Fast scrolling = scanning
     if (signals.copy_text && signals.copy_text.length > 0) score += 15; // High interest
+    if (signals.text_selections && signals.text_selections.length > 0) score += 10; // Reading detail
     if (signals.hesitation_event) score += 10; // Considered clicking CTA
+
+    // Scroll Depth
+    if (signals.scroll_depth) {
+      if (signals.scroll_depth > 75) score += 10;
+      else if (signals.scroll_depth > 50) score += 5;
+    }
+
+    // Dead Clicks / Rage Clicks (Ambiguous - could be high intent but frustrated)
+    if (signals.rage_clicks > 0 || (signals.dead_clicks && signals.dead_clicks.length > 0)) {
+      // We don't dock points, but we change category to 'Frustrated' logic handled in UI generation
+      score += 5; // They are trying to do something
+    }
 
     // 3. Exit Intent Logic
     const exitIntent = signals.events ? signals.events.find(e => e.type === 'exit_intent') : null;

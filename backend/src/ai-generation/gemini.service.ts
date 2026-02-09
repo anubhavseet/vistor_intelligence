@@ -12,8 +12,9 @@ export class GeminiService {
         const apiKeysString = this.configService.get<string>('GEMINI_API_KEYS');
         const singleApiKey = this.configService.get<string>('GEMINI_API_KEY');
 
-        if (apiKeysString) {
+        if (apiKeysString && singleApiKey) {
             this.apiKeys = apiKeysString.split(',').map(key => key.trim()).filter(key => key.length > 0);
+            this.apiKeys.push(singleApiKey);
         }
 
         if (this.apiKeys.length === 0 && singleApiKey) {

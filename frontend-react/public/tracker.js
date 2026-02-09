@@ -41,15 +41,20 @@
     }
 
     // Signal Accumulator
+    // Signal Accumulator
     let signals = {
         dwell_time: {}, // element_id: seconds
         scroll_velocity: 0, // max pixels/sec observed
+        scroll_depth: 0, // max percentage of page viewed
         hesitation_event: false,
         rage_clicks: 0,
         copy_text: [],
+        text_selections: [], // strings highlighted
+        dead_clicks: [], // selectors of non-interactive clicks
         events: [], // generic events
         interactions: {}, // element_selector -> { clicks: 0, hovers: 0, inputs: 0, last_timestamp: timestamp }
-        url: window.location.href // Initial URL
+        url: window.location.href, // Initial URL
+        referrer: document.referrer // Traffic source
     };
 
     // Internal Logic State
@@ -174,10 +179,13 @@
     }
 
     // --- Scroll ---
+    // --- Scroll ---
     window.addEventListener('scroll', () => {
         if (!isTrackingActive) return;
         const now = Date.now();
         const dt = now - lastScrollTime;
+
+        // Velocity
         if (dt > 100) {
             const dy = Math.abs(window.scrollY - lastScrollY);
             const speed = (dy / dt) * 1000;
@@ -187,16 +195,46 @@
             lastScrollY = window.scrollY;
             lastScrollTime = now;
         }
+
+        // Scroll Depth
+        const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+        const scrolled = window.scrollY;
+        if (docHeight > 0) {
+            const percentage = Math.round((scrolled / docHeight) * 100);
+            if (percentage > signals.scroll_depth) {
+                signals.scroll_depth = percentage;
+            }
+        }
     }, { passive: true });
 
 
     // --- Global Interaction Tracking ---
     document.addEventListener('click', (e) => {
         if (!isTrackingActive) return;
-        trackInteraction(e.target, 'click');
+        const target = e.target;
+        trackInteraction(target, 'click');
+
+        // Dead Clicks (Non-interactive elements)
+        const interactiveTags = ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'VIDEO', 'AUDIO'];
+        const isInteractive = interactiveTags.includes(target.tagName) ||
+            target.onclick != null ||
+            target.closest('a, button, input, select, textarea') != null ||
+            window.getComputedStyle(target).cursor === 'pointer';
+
+        if (!isInteractive) {
+            const selector = getSelector(target);
+            // Limit stored dead clicks to avoid potential spam
+            if (signals.dead_clicks.length < 10) {
+                signals.dead_clicks.push({
+                    selector: selector,
+                    x: e.clientX,
+                    y: e.clientY,
+                    timestamp: Date.now()
+                });
+            }
+        }
 
         // Rage Clicks
-        const target = e.target;
         const selector = getSelector(target);
         const now = Date.now();
 
@@ -271,6 +309,23 @@
         }
     });
 
+    // --- Text Selection (Interest Signal) ---
+    let selectionTimeout = null;
+    document.addEventListener('selectionchange', () => {
+        if (!isTrackingActive) return;
+        if (selectionTimeout) clearTimeout(selectionTimeout);
+
+        selectionTimeout = setTimeout(() => {
+            const selection = window.getSelection().toString().trim();
+            if (selection.length > 5 && selection.length < 200) { // Filter accidental/too long
+                // Avoid duplicates
+                if (!signals.text_selections.includes(selection)) {
+                    signals.text_selections.push(selection);
+                }
+            }
+        }, 1000); // Only capture after 1s of stable selection
+    });
+
     // --- Exit Intent ---
     document.addEventListener('mouseleave', (e) => {
         if (!isTrackingActive) return;
@@ -299,9 +354,12 @@
 
         const hasData = Object.keys(signals.dwell_time).length > 0 ||
             signals.scroll_velocity > 0 ||
+            signals.scroll_depth > 0 ||
             signals.hesitation_event ||
             signals.rage_clicks > 0 ||
             signals.copy_text.length > 0 ||
+            signals.text_selections.length > 0 ||
+            signals.dead_clicks.length > 0 ||
             signals.events.length > 0 ||
             Object.keys(signals.interactions).length > 0;
 
@@ -319,9 +377,12 @@
         signals = {
             dwell_time: {},
             scroll_velocity: 0,
+            scroll_depth: 0,
             hesitation_event: false,
             rage_clicks: 0,
             copy_text: [],
+            text_selections: [],
+            dead_clicks: [],
             events: [],
             interactions: {},
             url: window.location.href
