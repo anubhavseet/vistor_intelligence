@@ -45,10 +45,11 @@ export default function TrackingCodePage() {
 <script>
   (function() {
     var script = document.createElement('script');
-    script.src = 'https://cdn.visitorintel.com/tracker.js';
+    script.src = '${window.location.origin}/tracker.js';
     script.async = true;
     script.setAttribute('data-site-id', '${currentSite.siteId}');
     script.setAttribute('data-api-key', '${currentSite.apiKey}');
+    script.setAttribute('data-graphql-endpoint', '${import.meta.env.VITE_GRAPHQL_URI || (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL + '/graphql' : 'http://localhost:4040/graphql')}');
     document.head.appendChild(script);
   })();
 </script>
@@ -59,10 +60,11 @@ export default function TrackingCodePage() {
 export default function App() {
   useEffect(() => {
     const script = document.createElement('script');
-    script.src = 'https://cdn.visitorintel.com/tracker.js';
+    script.src = '${window.location.origin}/tracker.js';
     script.async = true;
     script.setAttribute('data-site-id', '${currentSite.siteId}');
     script.setAttribute('data-api-key', '${currentSite.apiKey}');
+    script.setAttribute('data-graphql-endpoint', '${import.meta.env.VITE_GRAPHQL_URI || (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL + '/graphql' : 'http://localhost:4040/graphql')}');
     document.head.appendChild(script);
 
     return () => {
@@ -82,10 +84,11 @@ export default function RootLayout({ children }) {
   return (
     <>
       <Script
-        src="https://cdn.visitorintel.com/tracker.js"
+        src="${window.location.origin}/tracker.js"
         strategy="afterInteractive"
         data-site-id="${currentSite.siteId}"
         data-api-key="${currentSite.apiKey}"
+        data-graphql-endpoint="${import.meta.env.VITE_GRAPHQL_URI || (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL + '/graphql' : 'http://localhost:4040/graphql')}"
       />
       {children}
     </>

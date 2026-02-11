@@ -1,6 +1,3 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Zap, Eye, MousePointer2 } from "lucide-react";
 
@@ -15,29 +12,30 @@ interface VisitorSession {
     ui_payload?: any;
 }
 
+import { useQuery } from "@apollo/client/react";
+import { gql } from "@apollo/client";
+
+const GET_LIVE_SESSIONS = gql`
+  query GetLiveSessions($siteId: String!) {
+    getLiveSessions(siteId: $siteId) {
+      sessionId
+      intentScore
+      intentCategory
+      pagesVisited
+      lastActivityAt
+      isActive
+    }
+  }
+`;
+
 export default function IntentStream({ siteId }: { siteId: string }) {
-    const [sessions, setSessions] = useState<VisitorSession[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, loading } = useQuery(GET_LIVE_SESSIONS, {
+        variables: { siteId },
+        pollInterval: 3000,
+        fetchPolicy: "network-only"
+    });
 
-    const fetchSessions = async () => {
-        try {
-            // In production, use env var for API URL
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/v1/track/live/${siteId}`);
-            if (!res.ok) throw new Error("Failed to fetch");
-            const data = await res.json();
-            setSessions(data);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchSessions();
-        const interval = setInterval(fetchSessions, 3000); // Poll every 3s
-        return () => clearInterval(interval);
-    }, [siteId]);
+    const sessions: VisitorSession[] = (data as any)?.getLiveSessions || [];
 
     return (
         <div className="bg-slate-950 text-white p-6 rounded-2xl font-sans min-h-[600px]">

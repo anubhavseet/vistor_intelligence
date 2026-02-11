@@ -10,7 +10,7 @@
 
     // Configuration
     const CONFIG = {
-        apiBase: 'http://localhost:4040/api/v1/track',
+        graphqlEndpoint: document.currentScript ? document.currentScript.getAttribute('data-graphql-endpoint') : 'http://localhost:4040/graphql',
         batchInterval: 20000,
         idleThreshold: 1000,
         maxRetries: 3,
@@ -18,7 +18,8 @@
     };
 
     // State
-    let siteId = document.currentScript ? document.currentScript.getAttribute('data-site-id') : null;
+    const siteId = document.currentScript ? document.currentScript.getAttribute('data-site-id') : null;
+    const apiKey = document.currentScript ? document.currentScript.getAttribute('data-api-key') : null;
     let sessionId = localStorage.getItem('vi_session_id');
     let userId = localStorage.getItem('vi_user_id');
 
@@ -38,6 +39,24 @@
     if (!userId) {
         userId = 'user_' + Math.random().toString(36).substring(2, 15);
         localStorage.setItem('vi_user_id', userId);
+    }
+
+    // --- Helper: GraphQL Fetcher ---
+    async function graphqlFetch(query, variables = {}) {
+        const response = await fetch(CONFIG.graphqlEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-site-id': siteId,
+                'x-api-key': apiKey
+            },
+            body: JSON.stringify({ query, variables })
+        });
+        const result = await response.json();
+        if (result.errors) {
+            throw new Error(result.errors[0].message);
+        }
+        return result.data;
     }
 
     // Signal Accumulator
@@ -365,13 +384,38 @@
 
         if (!hasData) return;
 
-        const payload = {
-            userId,
+        const input = {
             sessionId,
-            siteId,
-            signals: { ...signals }, // signals contains 'url'
-            timestamp: Date.now()
+            signals: {
+                dwell_time: JSON.stringify(signals.dwell_time),
+                scroll_velocity: signals.scroll_velocity,
+                scroll_depth: signals.scroll_depth,
+                hesitation_event: signals.hesitation_event,
+                rage_clicks: signals.rage_clicks,
+                copy_text: signals.copy_text,
+                text_selections: signals.text_selections,
+                events: JSON.stringify(signals.events),
+                interactions: JSON.stringify(signals.interactions),
+                url: window.location.href,
+                referrer: document.referrer
+            },
+            timestamp: Date.now(),
+            pageUrl: window.location.href,
+            referrer: document.referrer,
+            userAgent: navigator.userAgent
         };
+
+        const mutation = `
+            mutation Track($siteId: String!, $apiKey: String!, $input: TrackInput!) {
+                track(siteId: $siteId, apiKey: $apiKey, input: $input) {
+                    sessionId
+                    intent_category
+                    current_score
+                    suggested_action
+                    ui_payload
+                }
+            }
+        `;
 
         // Reset
         signals = {
@@ -390,19 +434,9 @@
         accumulatedDwell = {};
 
         try {
-            const response = await fetch(CONFIG.apiBase, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-site-id': siteId // Also send in header
-                },
-                body: JSON.stringify(payload),
-                keepalive: true
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                handleServerResponse(data);
+            const data = await graphqlFetch(mutation, { siteId, apiKey: apiKey || 'sk_public', input });
+            if (data && data.track) {
+                handleServerResponse(data.track);
             }
         } catch (e) {
             console.warn("Tracker: Failed to send batch", e);
@@ -413,7 +447,12 @@
     function handleServerResponse(data) {
         if (!data) return;
         if (data.ui_payload) {
-            injectAiUi(data.ui_payload);
+            try {
+                const payload = JSON.parse(data.ui_payload);
+                injectAiUi(payload);
+            } catch (e) {
+                console.error("Tracker: Failed to parse UI payload", e);
+            }
             return;
         }
     }
@@ -516,17 +555,22 @@
 
     // --- Initialization with Config Fetch ---
     async function bootstrap() {
-        console.log("Tracker: Initializing...");
+        console.log("Tracker: Initializing (GraphQL)...");
 
         try {
-            // Fetch configuration
-            const response = await fetch(`${CONFIG.apiBase}/config/${siteId}`);
-            if (!response.ok) {
-                console.warn(`Tracker: Failed to load config (${response.status}). Aborting.`);
-                return;
-            }
+            // Fetch configuration via GraphQL
+            const query = `
+                query GetSiteConfig($siteId: String!) {
+                    getSiteConfig(siteId: $siteId) {
+                        settings
+                        allowedDomains
+                        isActive
+                    }
+                }
+            `;
 
-            const config = await response.json();
+            const data = await graphqlFetch(query, { siteId });
+            const config = data.getSiteConfig;
 
             // 1. Check if active
             if (!config.isActive) {
@@ -547,10 +591,17 @@
             }
 
             // 3. Apply settings
+            let settings = {};
             if (config.settings) {
-                if (config.settings.trackingStartDelay) {
-                    CONFIG.startUpDelay = config.settings.trackingStartDelay;
+                try {
+                    settings = JSON.parse(config.settings);
+                } catch (e) {
+                    console.error("Tracker: Failed to parse settings", e);
                 }
+            }
+
+            if (settings.trackingStartDelay) {
+                CONFIG.startUpDelay = settings.trackingStartDelay;
             }
 
             console.log(`Tracker: Config loaded. Starting in ${CONFIG.startUpDelay}ms...`);
