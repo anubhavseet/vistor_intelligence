@@ -14,7 +14,7 @@ export default function SignupForm() {
   const { setAuth } = useAuth()
   const navigate = useNavigate()
 
-  const [register, { loading }] = useMutation(REGISTER_MUTATION)
+  const [register, { loading }] = useMutation<any, any>(REGISTER_MUTATION)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

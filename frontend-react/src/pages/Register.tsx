@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import SignupForm from '@/components/SignupForm'
-import { ArrowLeft, Check, Layout, Globe, Shield } from 'lucide-react'
+import { ArrowLeft, Layout, Globe, Shield } from 'lucide-react'
 
 export default function RegisterPage() {
     return (

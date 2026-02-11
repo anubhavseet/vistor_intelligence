@@ -65,9 +65,9 @@ export default function LiveVisitorMap({ siteId }: LiveVisitorMapProps) {
   if (loading) return <div className="p-8">Loading map...</div>
   if (error) return <div className="p-8 text-red-500">Error: {error.message}</div>
 
-  const points = data?.getVisitorMap?.points || []
-  const countryCounts = data?.getVisitorMap?.countryCounts || []
-  const totalVisitors = data?.getVisitorMap?.totalVisitors || 0
+  const points = (data as any)?.getVisitorMap?.points || []
+  const countryCounts = (data as any)?.getVisitorMap?.countryCounts || []
+  const totalVisitors = (data as any)?.getVisitorMap?.totalVisitors || 0
 
   return (
     <div className="space-y-6">
@@ -80,8 +80,8 @@ export default function LiveVisitorMap({ siteId }: LiveVisitorMapProps) {
                 key={range}
                 onClick={() => setTimeRange(range)}
                 className={`px-4 py-2 rounded-lg ${timeRange === range
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
               >
                 {range}
@@ -97,7 +97,7 @@ export default function LiveVisitorMap({ siteId }: LiveVisitorMapProps) {
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
             <span className="text-sm font-semibold text-gray-900">
-              {countData?.getLiveVisitorCount || 0} live now
+              {(countData as any)?.getLiveVisitorCount || 0} live now
             </span>
           </div>
         </div>

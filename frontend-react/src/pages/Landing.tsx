@@ -2,18 +2,13 @@ import { useState, useEffect } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
-    Sparkles,
     ArrowRight,
     Check,
-    ChevronRight,
-    Search,
-    BrainCircuit,
     Layers,
     Activity,
     Lock,
     Code2,
     Zap,
-    Users,
     Globe,
     ShieldCheck,
     BarChart3

@@ -23,8 +23,8 @@ export default function TrackingCodePage() {
     }, [isAuthenticated, navigate])
 
     useEffect(() => {
-        if (data?.getSites?.length > 0 && !selectedSite) {
-            setSelectedSite(data.getSites[0].siteId)
+        if ((data as any)?.getSites?.length > 0 && !selectedSite) {
+            setSelectedSite((data as any).getSites[0].siteId)
         }
     }, [data, selectedSite])
 
@@ -32,7 +32,7 @@ export default function TrackingCodePage() {
         return null
     }
 
-    const sites = data?.getSites || []
+    const sites = (data as any)?.getSites || []
     const currentSite = sites.find((s: any) => s.siteId === selectedSite)
 
     const handleCopy = (text: string, id: string) => {

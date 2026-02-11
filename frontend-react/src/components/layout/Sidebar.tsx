@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, User, AmpersandIcon } from "lucide-react";
+import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, AmpersandIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 

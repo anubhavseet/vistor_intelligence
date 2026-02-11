@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@apollo/client/react'
 import { X, Globe, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
-import { CREATE_SITE, type Site, type CreateSiteResponse } from '@/lib/graphql/site-operations'
+import { CREATE_SITE } from '@/lib/graphql/site-operations'
 
 interface AddSiteModalProps {
     isOpen: boolean
@@ -16,7 +16,7 @@ export default function AddSiteModal({ isOpen, onClose, onSuccess }: AddSiteModa
     const [createdSite, setCreatedSite] = useState<any>(null)
 
     const [createSite, { loading, error }] = useMutation(CREATE_SITE, {
-        onCompleted: (data) => {
+        onCompleted: (data: any) => {
             setCreatedSite(data.createSite)
             setShowApiKey(true)
         },

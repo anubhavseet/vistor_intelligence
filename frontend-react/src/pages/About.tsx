@@ -1,140 +1,151 @@
+import { ArrowLeft, Target, Rocket, Heart, Mail, Shield } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Users, Target, Rocket, Heart, Mail, Shield } from 'lucide-react'
 
 export default function AboutPage() {
+    const stats = [
+        { label: 'Active Users', value: '1,000+' },
+        { label: 'Websites Tracked', value: '2,500+' },
+        { label: 'Events Processed', value: '50M+' },
+        { label: 'Insights Generated', value: '100K+' },
+    ]
+
+    const features = [
+        {
+            title: 'Real-time Intelligence',
+            description: 'See exactly who is on your site right now, where they are from, and what they are doing.',
+            icon: Target,
+            color: 'bg-purple-500/10 text-purple-400',
+        },
+        {
+            title: 'AI-Powered Insights',
+            description: 'Our proprietary ML algorithms identify buying intent and surface high-probability accounts.',
+            icon: Rocket,
+            color: 'bg-blue-500/10 text-blue-400',
+        },
+        {
+            title: 'Privacy First',
+            description: 'Fully compliant with GDPR, CCPA, and DPDP. No cookies, no fingerprinting, total transparency.',
+            icon: Shield,
+            color: 'bg-green-500/10 text-green-400',
+        },
+        {
+            title: 'Human Centered',
+            description: 'Built by marketers and engineers who care about building better customer experiences.',
+            icon: Heart,
+            color: 'bg-pink-500/10 text-pink-400',
+        },
+    ]
+
     return (
-        <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500/30">
-            {/* Nav */}
-            <nav className="border-b border-white/10 sticky top-0 bg-black/80 backdrop-blur-md z-50">
-                <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                    <Link to="/" className="flex items-center space-x-2 text-sm font-semibold hover:text-gray-300 transition-colors">
-                        <ArrowLeft className="w-4 h-4" />
-                        <span>Back</span>
+        <div className="min-h-screen bg-[#030014] overflow-hidden">
+            {/* Background Elements */}
+            <div className="fixed inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 blur-[120px] rounded-full animate-pulse" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 blur-[120px] rounded-full animate-pulse" />
+            </div>
+
+            {/* Navigation */}
+            <nav className="relative z-50 border-b border-white/5 bg-black/20 backdrop-blur-xl">
+                <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+                    <Link to="/" className="flex items-center space-x-2 group">
+                        <ArrowLeft className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+                        <span className="text-gray-400 group-hover:text-white transition-colors font-medium">Back to Home</span>
                     </Link>
-                    <div className="flex items-center space-x-6 text-sm">
-                        <a href="#mission" className="text-gray-400 hover:text-white transition-colors">Mission</a>
-                        <a href="#team" className="text-gray-400 hover:text-white transition-colors">Team</a>
-                        <a href="#contact" className="px-4 py-2 bg-white text-black font-bold rounded hover:bg-gray-200 transition-colors">Contact</a>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center font-bold text-white">
+                            V
+                        </div>
+                        <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+                            Visitor Intel
+                        </span>
                     </div>
                 </div>
             </nav>
 
-            {/* Hero */}
-            <header className="py-32 border-b border-white/10 relative overflow-hidden">
-                <div className="absolute inset-0 bg-grid-small [mask-image:linear-gradient(to_bottom,white,transparent)] opacity-20 pointer-events-none" />
-                <div className="max-w-5xl mx-auto px-6 text-center relative z-10">
-                    <h1 className="text-5xl md:text-7xl font-bold mb-8 tracking-tight">
-                        Democratizing<br />
-                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">Visitor Intelligence</span>
+            <main className="relative z-10 max-w-7xl mx-auto px-6 py-20 pb-40">
+                {/* Hero Section */}
+                <div className="text-center max-w-3xl mx-auto mb-32">
+                    <h1 className="text-5xl md:text-6xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-white/90 to-white/40 leading-tight">
+                        We help you see the invisible.
                     </h1>
-                    <p className="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
-                        We are a team of engineers, data scientists, and designers building the future of B2B intent data. We believe powerful analytics shouldn't require a privacy compromise.
+                    <p className="text-xl text-gray-400 leading-relaxed">
+                        Visitor Intel was born out of a simple problem: businesses knew people were visiting their sites, but They had no idea who they were or what they wanted.
                     </p>
                 </div>
-            </header>
 
-            {/* Values Grid */}
-            <section id="mission" className="py-32 bg-[#050505] border-b border-white/10">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="mb-16">
-                        <h2 className="text-3xl font-bold mb-4">Our Core Values</h2>
-                        <p className="text-gray-400">The principles that guide our product and culture.</p>
-                    </div>
-
-                    <div className="grid md:grid-cols-4 gap-6">
-                        <div className="p-8 border border-white/10 rounded-xl bg-black">
-                            <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center mb-6 text-blue-500">
-                                <Target className="w-5 h-5" />
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-32">
+                    {stats.map((stat, index) => (
+                        <div key={index} className="relative group">
+                            <div className="absolute inset-0 bg-gradient-to-r from-violet-600/20 to-indigo-600/20 rounded-3xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="relative p-8 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-sm text-center">
+                                <div className="text-3xl font-bold text-white mb-2">{stat.value}</div>
+                                <div className="text-sm text-gray-500 uppercase tracking-widest font-semibold">{stat.label}</div>
                             </div>
-                            <h3 className="text-lg font-bold mb-2">Precision</h3>
-                            <p className="text-sm text-gray-400">We obsess over data accuracy. If it's not verified, it's not in our database.</p>
                         </div>
-                        <div className="p-8 border border-white/10 rounded-xl bg-black">
-                            <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center mb-6 text-purple-500">
-                                <Rocket className="w-5 h-5" />
-                            </div>
-                            <h3 className="text-lg font-bold mb-2">Velocity</h3>
-                            <p className="text-sm text-gray-400">We ship fast. Our customers move quickly, and so do we.</p>
-                        </div>
-                        <div className="p-8 border border-white/10 rounded-xl bg-black">
-                            <div className="w-10 h-10 bg-green-500/10 rounded-lg flex items-center justify-center mb-6 text-green-500">
-                                <Shield className="w-5 h-5" />
-                            </div>
-                            <h3 className="text-lg font-bold mb-2">Privacy</h3>
-                            <p className="text-sm text-gray-400">Privacy is not a feature; it's the foundation. We don't track without consent.</p>
-                        </div>
-                        <div className="p-8 border border-white/10 rounded-xl bg-black">
-                            <div className="w-10 h-10 bg-pink-500/10 rounded-lg flex items-center justify-center mb-6 text-pink-500">
-                                <Heart className="w-5 h-5" />
-                            </div>
-                            <h3 className="text-lg font-bold mb-2">Empathy</h3>
-                            <p className="text-sm text-gray-400">We build for humans. We solve real problems for real teams.</p>
-                        </div>
-                    </div>
+                    ))}
                 </div>
-            </section>
 
-            {/* Team */}
-            <section id="team" className="py-32 bg-black border-b border-white/10">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="mb-16 flex items-end justify-between">
-                        <div>
-                            <h2 className="text-3xl font-bold mb-4">Meet the Team</h2>
-                            <p className="text-gray-400">The builders behind the platform.</p>
+                {/* Vision Header */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center mb-40">
+                    <div>
+                        <h2 className="text-4xl font-bold text-white mb-8">Our Mission & Vision</h2>
+                        <div className="space-y-6">
+                            <p className="text-lg text-gray-400">
+                                Our mission is to democratize B2B intelligence. We believe that every company, regardless of size, should have access to the same visitor insights as Fortune 500 enterprises.
+                            </p>
+                            <p className="text-lg text-gray-400">
+                                We're building the first privacy-native identity platform for the post-cookie web. By focusing on account-level intelligence rather than individual stalking, we help businesses sell more while respecting user privacy.
+                            </p>
                         </div>
-                        <a href="#" className="hidden md:block text-blue-500 hover:text-blue-400 text-sm font-bold">Join us &rarr;</a>
                     </div>
-
-                    <div className="grid md:grid-cols-4 gap-8">
-                        {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="group">
-                                <div className="aspect-square bg-[#111] rounded-xl border border-white/10 mb-4 overflow-hidden relative grayscale group-hover:grayscale-0 transition-all duration-500">
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-6">
-                                        <div className="transform translate-y-4 group-hover:translate-y-0 transition-transform">
-                                            {/* Placeholder for real images */}
-                                        </div>
-                                    </div>
-                                    {/* Abstract placeholder */}
-                                    <div className="absolute inset-0 flex items-center justify-center text-gray-700 font-mono text-xs">
-                                        [PHOTO_PLACEHOLDER_{i}]
-                                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        {features.map((feature, index) => (
+                            <div key={index} className="p-6 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-sm">
+                                <div className={`w-12 h-12 rounded-2xl ${feature.color} flex items-center justify-center mb-4`}>
+                                    <feature.icon className="w-6 h-6" />
                                 </div>
-                                <h3 className="font-bold text-white">Team Member {i}</h3>
-                                <p className="text-sm text-gray-500">Co-Founder & Role</p>
+                                <h3 className="text-white font-bold mb-2">{feature.title}</h3>
+                                <p className="text-sm text-gray-500 leading-relaxed">{feature.description}</p>
                             </div>
                         ))}
                     </div>
                 </div>
-            </section>
 
-            {/* Contact */}
-            <section id="contact" className="py-32 bg-[#050505]">
-                <div className="max-w-3xl mx-auto px-6 text-center">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/5 border border-white/10 mb-8">
-                        <Mail className="w-8 h-8 text-white" />
-                    </div>
-                    <h2 className="text-4xl font-bold mb-6">Get in Touch</h2>
-                    <p className="text-xl text-gray-400 mb-12">
-                        Have questions about enterprise plans, security, or integrations? Our team is ready to help.
-                    </p>
-
-                    <div className="grid md:grid-cols-2 gap-4 max-w-xl mx-auto">
-                        <a href="mailto:sales@visitorintel.com" className="p-4 rounded-lg border border-white/10 bg-black hover:border-blue-500 transition-colors text-left group">
-                            <h4 className="font-bold text-white group-hover:text-blue-500 transition-colors">Sales Inquiry</h4>
-                            <p className="text-sm text-gray-500 mt-1">For Enterprise plans & demos</p>
-                            <div className="mt-4 text-xs font-mono text-gray-600">sales@visitorintel.com</div>
-                        </a>
-                        <a href="mailto:support@visitorintel.com" className="p-4 rounded-lg border border-white/10 bg-black hover:border-white/30 transition-colors text-left group">
-                            <h4 className="font-bold text-white">Product Support</h4>
-                            <p className="text-sm text-gray-500 mt-1">For technical issues & help</p>
-                            <div className="mt-4 text-xs font-mono text-gray-600">support@visitorintel.com</div>
-                        </a>
+                {/* CTA Section */}
+                <div className="relative">
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-blue-600/20 rounded-[40px] blur-3xl" />
+                    <div className="relative p-12 md:p-20 bg-white/5 border border-white/10 rounded-[40px] backdrop-blur-xl text-center overflow-hidden">
+                        <div className="absolute top-0 right-0 p-10 opacity-10">
+                            <Mail className="w-64 h-64 text-white" />
+                        </div>
+                        <h2 className="text-4xl font-bold text-white mb-6">Want to learn more?</h2>
+                        <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
+                            Our team is always happy to chat about B2B intelligence, buyer intent, or how we can help your business grow.
+                        </p>
+                        <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                            <a
+                                href="mailto:contact@visitorintel.com"
+                                className="px-8 py-4 bg-white text-black rounded-2xl font-bold hover:bg-gray-200 transition-all w-full sm:w-auto"
+                            >
+                                Contact Sales
+                            </a>
+                            <Link
+                                to="/register"
+                                className="px-8 py-4 bg-white/10 text-white rounded-2xl font-bold hover:bg-white/20 transition-all border border-white/10 w-full sm:w-auto"
+                            >
+                                Start Free Trial
+                            </Link>
+                        </div>
                     </div>
                 </div>
-            </section>
+            </main>
 
-            <footer className="border-t border-white/10 py-12 bg-black text-center">
-                <p className="text-gray-500 text-sm">© 2026 Visitor Intel Inc. All rights reserved.</p>
+            {/* Footer */}
+            <footer className="relative z-10 py-20 border-t border-white/5">
+                <div className="max-w-7xl mx-auto px-6 text-center">
+                    <p className="text-gray-500">© 2024 Visitor Intel. All rights reserved.</p>
+                </div>
             </footer>
         </div>
     )

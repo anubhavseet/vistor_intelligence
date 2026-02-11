@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { FileText, Download, Calendar, Users, Globe, Activity, TrendingUp } from 'lucide-react'
+import { Download, Calendar, Users, Globe, Activity, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function ReportsPage() {

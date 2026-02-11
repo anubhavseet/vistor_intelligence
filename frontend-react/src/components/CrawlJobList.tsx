@@ -1,6 +1,6 @@
 import { gql } from '@apollo/client'
 import { useMutation, useQuery } from '@apollo/client/react'
-import { Loader2, Globe, CheckCircle2, XCircle, Clock, Zap, Trash2 } from 'lucide-react'
+import { Loader2, Globe, CheckCircle2, XCircle, Clock, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import ConfirmationDialog from './ConfirmationDialog'
 
@@ -71,7 +71,7 @@ export default function CrawlJobList({ siteId }: CrawlJobListProps) {
         const unsubscribe = subscribeToMore({
             document: JOB_UPDATED_SUBSCRIPTION,
             variables: { siteId },
-            updateQuery: (prev, { subscriptionData }) => {
+            updateQuery: (prev: any, { subscriptionData }: any) => {
                 if (!subscriptionData.data) return prev
                 const updatedJob = subscriptionData.data.crawlJobUpdated
 
@@ -111,7 +111,7 @@ export default function CrawlJobList({ siteId }: CrawlJobListProps) {
         )
     }
 
-    const jobs: CrawlJob[] = data?.getSiteCrawlJobs || []
+    const jobs: CrawlJob[] = (data as any)?.getSiteCrawlJobs || []
 
     if (jobs.length === 0) {
         return (

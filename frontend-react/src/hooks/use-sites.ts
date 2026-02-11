@@ -6,7 +6,6 @@ import {
     UPDATE_SITE,
     DELETE_SITE,
     REGENERATE_API_KEY,
-    type Site,
     type GetSitesResponse,
     type GetSiteResponse,
     type CreateSiteResponse,

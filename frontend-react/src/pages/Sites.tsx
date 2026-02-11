@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { gql } from "@apollo/client"
-import { Plus, ExternalLink, Globe, Loader2 } from "lucide-react"
+import { Plus, Globe, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
-import { AddSiteModal } from "../components/sites/AddSiteModal"
+import AddSiteModal from "../components/AddSiteModal"
 import { cn } from "../lib/utils"
 import { useQuery } from "@apollo/client/react"
 
@@ -25,7 +25,6 @@ export default function SitesPage() {
         fetchPolicy: "network-only"
     })
 
-    // Mock data if backend is not reachable/empty for demo purposes
     if (error) {
         return (
             <div className="flex h-[50vh] flex-col items-center justify-center text-center">
@@ -63,13 +62,13 @@ export default function SitesPage() {
                 </div>
             ) : (
                 <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {data?.getSites.length === 0 ? (
+                    {(data as any)?.getSites?.length === 0 ? (
                         <div className="col-span-full flex h-64 flex-col items-center justify-center rounded-lg border border-dashed bg-card/50 p-8 text-center text-muted-foreground">
                             <Globe className="h-12 w-12 opacity-50 mb-4" />
                             <p>No websites found. Add your first website to get started.</p>
                         </div>
                     ) : (
-                        data?.getSites.map((site: any) => (
+                        (data as any)?.getSites?.map((site: any) => (
                             <div key={site.siteId} className="group relative overflow-hidden rounded-lg border bg-card p-6 shadow-sm transition-all hover:shadow-md">
                                 <div className="flex items-center justify-between">
                                     <div className="space-y-1">

@@ -43,7 +43,7 @@ export default function AccountIntelligence({ siteId }: AccountIntelligenceProps
   if (loading) return <div className="p-8">Loading accounts...</div>
   if (error) return <div className="p-8 text-red-500">Error: {error.message}</div>
 
-  const accounts = data?.getTopHighIntentAccounts || []
+  const accounts = (data as any)?.getAccountIntentScores || []
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return 'text-green-600 bg-green-100'

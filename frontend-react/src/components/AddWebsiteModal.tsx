@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, X, Loader2, Zap, AlertCircle } from 'lucide-react'
+import { X, Loader2, Zap, AlertCircle } from 'lucide-react'
 import { useCrawler } from '@/hooks/use-crawler'
 import { cn } from '@/lib/utils'
 

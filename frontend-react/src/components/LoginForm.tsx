@@ -12,7 +12,7 @@ export default function LoginForm() {
   const { setAuth } = useAuth()
   const navigate = useNavigate()
 
-  const [login, { loading }] = useMutation(LOGIN_MUTATION)
+  const [login, { loading }] = useMutation<any, any>(LOGIN_MUTATION)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -39,8 +39,8 @@ export default function BehaviorAnalytics({ siteId }: BehaviorAnalyticsProps) {
 
   if (trendsLoading || flowLoading) return <div className="p-8">Loading analytics...</div>
 
-  const trends = trendsData?.getEngagementTrends || []
-  const topTransitions = flowData?.getPageFlow?.topTransitions || []
+  const trends = (trendsData as any)?.getEngagementTrends || []
+  const topTransitions = (flowData as any)?.getPageFlow?.topTransitions || []
 
   return (
     <div className="space-y-6">

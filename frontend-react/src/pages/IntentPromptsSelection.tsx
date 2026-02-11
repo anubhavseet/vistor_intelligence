@@ -53,7 +53,7 @@ export default function IntentPromptsSelection() {
             </div>
 
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {data?.getSites.map((site: any) => (
+                {(data as any)?.getSites.map((site: any) => (
                     <Link
                         key={site.siteId}
                         to={`/dashboard/sites/${site.siteId}/prompts`}
@@ -77,7 +77,7 @@ export default function IntentPromptsSelection() {
                     </Link>
                 ))}
 
-                {data?.getSites.length === 0 && (
+                {(data as any)?.getSites.length === 0 && (
                     <div className="col-span-full text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
                         No sites found. Please create a site first.
                     </div>

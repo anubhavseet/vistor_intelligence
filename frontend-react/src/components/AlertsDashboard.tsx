@@ -4,7 +4,7 @@ interface AlertsDashboardProps {
   siteId: string
 }
 
-export default function AlertsDashboard({ siteId }: AlertsDashboardProps) {
+export default function AlertsDashboard({ siteId: _siteId }: AlertsDashboardProps) {
   const [alerts] = useState([
     {
       id: 1,
@@ -33,13 +33,12 @@ export default function AlertsDashboard({ siteId }: AlertsDashboardProps) {
             alerts.map((alert) => (
               <div
                 key={alert.id}
-                className={`p-4 rounded-lg border-l-4 ${
-                  alert.severity === 'high'
+                className={`p-4 rounded-lg border-l-4 ${alert.severity === 'high'
                     ? 'bg-red-50 border-red-500'
                     : alert.severity === 'medium'
-                    ? 'bg-yellow-50 border-yellow-500'
-                    : 'bg-blue-50 border-blue-500'
-                }`}
+                      ? 'bg-yellow-50 border-yellow-500'
+                      : 'bg-blue-50 border-blue-500'
+                  }`}
               >
                 <div className="flex justify-between items-start">
                   <div>
