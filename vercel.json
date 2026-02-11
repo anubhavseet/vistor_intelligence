@@ -4,5 +4,11 @@
   "outputDirectory": "frontend-react/dist",
   "installCommand": "cd frontend-react && npm install",
   "framework": null,
-  "devCommand": "cd frontend-react && npm run dev"
+  "devCommand": "cd frontend-react && npm run dev",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
