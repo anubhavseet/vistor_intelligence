@@ -67,7 +67,7 @@ const Hero = () => {
     const y = useTransform(scrollY, [0, 500], [0, 100])
 
     return (
-        <section className="relative min-h-screen pt-32 pb-20 flex flex-col justify-center overflow-hidden border-b border-white/10">
+        <section className="relative min-h-screen pt-32 pb-20 flex flex-col justify-center overflow-hidden">
             {/* Vercel-style Grid Background */}
             <div className="absolute inset-0 bg-grid-small [mask-image:linear-gradient(to_bottom,white,transparent)] pointer-events-none" />
             <div className="absolute inset-0 hero-glow pointer-events-none" />
@@ -84,10 +84,11 @@ const Hero = () => {
                 </motion.div>
 
                 <motion.h1
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.1 }}
-                    className="text-6xl md:text-8xl font-bold tracking-tight mb-8 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50"
+                    initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    whileHover={{ scale: 1.01, transition: { duration: 0.2 } }}
+                    className="text-6xl md:text-8xl font-bold tracking-tight mb-8 bg-clip-text text-transparent bg-gradient-to-br from-white via-gray-200 to-blue-400"
                 >
                     Turn anonymous visitors<br />
                     into revenue.
@@ -165,6 +166,7 @@ const Hero = () => {
                     </div>
                 </motion.div>
             </div>
+            <SectionBorder />
         </section>
     )
 }
@@ -172,7 +174,7 @@ const Hero = () => {
 const Marquee = () => {
     const companies = ["Github", "Vercel", "Stripe", "Linear", "Raycast", "OpenAI", "Airbnb", "Shopify"]
     return (
-        <section className="py-12 border-b border-white/10 overflow-hidden bg-black">
+        <section className="py-12 overflow-hidden bg-black relative">
             <div className="max-w-7xl mx-auto px-6 text-center mb-8">
                 <span className="text-xs font-mono text-gray-500 uppercase tracking-widest">Trusted by data-driven teams</span>
             </div>
@@ -185,7 +187,68 @@ const Marquee = () => {
                     ))}
                 </div>
             </div>
+            <SectionBorder />
         </section>
+    )
+}
+
+const SectionBorder = () => (
+    <div className="absolute bottom-0 left-0 right-0 h-[1px] bg-white/20 overflow-hidden z-20">
+        <motion.div
+            className="absolute top-0 bottom-0 w-[40%] bg-gradient-to-r from-transparent via-blue-400 to-transparent opacity-100"
+            animate={{ x: ['-100%', '300%'] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", repeatDelay: 1 }}
+        />
+        <div className="absolute inset-0 bg-white/10" />
+    </div>
+)
+
+const WorldMap = () => {
+    return (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+            <svg width="100%" height="100%" viewBox="0 0 800 400" className="w-full h-full">
+                <defs>
+                    <radialGradient id="dot-glow" cx="0.5" cy="0.5" r="0.5">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity="1" />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                    </radialGradient>
+                </defs>
+                {/* Simplified World Dot Grid */}
+                {[...Array(120)].map((_, i) => {
+                    const x = (i % 15) * 50 + 50 + Math.random() * 20;
+                    const y = Math.floor(i / 15) * 40 + 40 + Math.random() * 20;
+                    // Filter out some dots to shape continents roughly
+                    if ((x > 300 && x < 450 && y > 250) || (x < 200 && y > 300)) return null;
+                    return (
+                        <circle
+                            key={i}
+                            cx={x}
+                            cy={y}
+                            r={Math.random() > 0.8 ? 3 : 1.5}
+                            fill={Math.random() > 0.9 ? "#3b82f6" : "#334155"}
+                            className="transition-all duration-1000"
+                        >
+                            {Math.random() > 0.95 && (
+                                <animate attributeName="opacity" values="0.2;1;0.2" dur="3s" repeatCount="indefinite" />
+                            )}
+                        </circle>
+                    );
+                })}
+                {/* Active signals */}
+                <circle cx="200" cy="150" r="4" fill="url(#dot-glow)" className="animate-pulse">
+                    <animate attributeName="r" values="4;12;4" dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="1;0;1" dur="2s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="550" cy="180" r="4" fill="url(#dot-glow)" className="animate-pulse delay-700">
+                    <animate attributeName="r" values="4;12;4" dur="2s" begin="1s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="1;0;1" dur="2s" begin="1s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="420" cy="120" r="4" fill="url(#dot-glow)" className="animate-pulse delay-300">
+                    <animate attributeName="r" values="4;12;4" dur="3s" begin="0.5s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="1;0;1" dur="3s" begin="0.5s" repeatCount="indefinite" />
+                </circle>
+            </svg>
+        </div>
     )
 }
 
@@ -193,8 +256,16 @@ const Features = () => {
     return (
         <section id="features" className="py-32 bg-black relative">
             <div className="max-w-7xl mx-auto px-6">
-                <div className="mb-24">
-                    <h2 className="text-4xl md:text-5xl font-bold mb-6">Intelligence that <span className="text-blue-500">acts</span>.</h2>
+                <div className="mb-24 relative z-10">
+                    <motion.h2
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5 }}
+                        className="text-4xl md:text-5xl font-bold mb-6"
+                    >
+                        Intelligence that <span className="text-blue-500">acts</span>.
+                    </motion.h2>
                     <p className="text-xl text-gray-400 max-w-2xl">
                         We don't just observe behavior. We give you the tools to shape it dynamically.
                     </p>
@@ -203,7 +274,7 @@ const Features = () => {
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-6 auto-rows-[minmax(300px,auto)]">
 
                     {/* Feature 1: AI Generative UI Injection (Large) */}
-                    <div className="md:col-span-4 row-span-2 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group">
+                    <div className="md:col-span-4 row-span-2 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-blue-500/30 transition-colors duration-500">
                         <div className="absolute inset-0 bg-grid-small opacity-10" />
                         <div className="relative z-10 flex flex-col h-full">
                             <div className="flex items-center space-x-3 mb-4">
@@ -246,7 +317,7 @@ const Features = () => {
                     </div>
 
                     {/* Feature 2: Intent Prompts (Tall) */}
-                    <div className="md:col-span-2 row-span-2 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group">
+                    <div className="md:col-span-2 row-span-2 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-purple-500/30 transition-colors duration-500">
                         <div className="relative z-10 h-full flex flex-col">
                             <div className="flex items-center space-x-3 mb-4">
                                 <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/20">
@@ -272,24 +343,27 @@ const Features = () => {
                         </div>
                     </div>
 
-                    {/* Feature 3: IP Heatmaps */}
-                    <div className="md:col-span-3 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group">
-                        <div className="flex items-center space-x-3 mb-4">
-                            <div className="p-2 bg-red-500/10 rounded-lg border border-red-500/20">
-                                <ShieldCheck className="w-5 h-5 text-red-500" />
+                    {/* Feature 3: IP Heatmaps (Updated with WorldMap) */}
+                    <div className="md:col-span-3 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-red-500/30 transition-colors duration-500">
+                        <div className="relative z-10">
+                            <div className="flex items-center space-x-3 mb-4">
+                                <div className="p-2 bg-red-500/10 rounded-lg border border-red-500/20">
+                                    <ShieldCheck className="w-5 h-5 text-red-500" />
+                                </div>
+                                <h3 className="text-xl font-bold">Global Heatmaps</h3>
                             </div>
-                            <h3 className="text-xl font-bold">Account-Level Heatmaps</h3>
+                            <p className="text-gray-400 text-sm max-w-sm relative z-20">
+                                Visualize exactly where employees from specific target accounts (e.g., "Uber HQ") are accessing your site.
+                            </p>
                         </div>
-                        <p className="text-gray-400 text-sm">
-                            Visualize exactly where employees from specific target accounts (e.g., "Uber HQ") are clicking and scrolling on your site.
-                        </p>
-                        <div className="absolute right-0 bottom-0 opacity-20">
-                            <Activity className="w-32 h-32 text-red-500" />
+                        <WorldMap />
+                        <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
+                            <Globe className="w-48 h-48 text-red-500" />
                         </div>
                     </div>
 
                     {/* Feature 4: Granular Analytics */}
-                    <div className="md:col-span-3 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group">
+                    <div className="md:col-span-3 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-green-500/30 transition-colors duration-500">
                         <div className="flex items-center space-x-3 mb-4">
                             <div className="p-2 bg-green-500/10 rounded-lg border border-green-500/20">
                                 <BarChart3 className="w-5 h-5 text-green-500" />
@@ -300,24 +374,81 @@ const Features = () => {
                             Track micro-interactions that signal interest: text selection, rage clicks, scroll velocity, and copy-paste events.
                         </p>
                         <div className="mt-4 flex gap-4 text-xs font-mono text-gray-500">
-                            <div className="flex items-center"><Check className="w-3 h-3 mr-1 text-green-500" /> Text Selection</div>
-                            <div className="flex items-center"><Check className="w-3 h-3 mr-1 text-green-500" /> Rage Clicks</div>
-                            <div className="flex items-center"><Check className="w-3 h-3 mr-1 text-green-500" /> Dwell Time</div>
+                            <div className="flex items-center px-2 py-1 bg-green-500/5 rounded border border-green-500/10"><Check className="w-3 h-3 mr-1 text-green-500" /> Text Selection</div>
+                            <div className="flex items-center px-2 py-1 bg-green-500/5 rounded border border-green-500/10"><Check className="w-3 h-3 mr-1 text-green-500" /> Rage Clicks</div>
+                            <div className="flex items-center px-2 py-1 bg-green-500/5 rounded border border-green-500/10"><Check className="w-3 h-3 mr-1 text-green-500" /> Scroll Depth</div>
                         </div>
                     </div>
+
+                    {/* Feature 5: Tech Stack Detection (New) */}
+                    <div className="md:col-span-2 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-6 relative overflow-hidden group hover:border-white/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-3">
+                            <div className="p-2 bg-white/10 rounded-lg border border-white/20">
+                                <Layers className="w-5 h-5 text-white" />
+                            </div>
+                            <h3 className="text-lg font-bold">Tech Detection</h3>
+                        </div>
+                        <p className="text-gray-400 text-sm mb-4">
+                            Identify if a visitor is using React, AWS, or specific frameworks.
+                        </p>
+                        <div className="flex -space-x-2">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">TS</div>
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">gh</div>
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">aws</div>
+                        </div>
+                    </div>
+
+                    {/* Feature 6: Privacy (New) */}
+                    <div className="md:col-span-2 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-6 relative overflow-hidden group hover:border-white/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-3">
+                            <div className="p-2 bg-white/10 rounded-lg border border-white/20">
+                                <Lock className="w-5 h-5 text-white" />
+                            </div>
+                            <h3 className="text-lg font-bold">Privacy First</h3>
+                        </div>
+                        <p className="text-gray-400 text-sm">
+                            GDPR, CCPA, and PECR compliant by default. No personal data storage needed.
+                        </p>
+                        <div className="mt-3 flex items-center text-xs text-green-400">
+                            <ShieldCheck className="w-3 h-3 mr-1" /> SOC2 Certified
+                        </div>
+                    </div>
+
+                    {/* Feature 7: Real-time Alerts (New) */}
+                    <div className="md:col-span-2 row-span-1 border border-white/10 rounded-xl bg-[#050505] p-6 relative overflow-hidden group hover:border-white/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-3">
+                            <div className="p-2 bg-white/10 rounded-lg border border-white/20">
+                                <Activity className="w-5 h-5 text-white" />
+                            </div>
+                            <h3 className="text-lg font-bold">Instant Alerts</h3>
+                        </div>
+                        <p className="text-gray-400 text-sm">
+                            Push notifications to Slack or MS Teams the moment a VIP account lands.
+                        </p>
+                    </div>
+
                 </div>
             </div>
+            <SectionBorder />
         </section>
     )
 }
 
 const MethodologyWaitlist = () => {
     return (
-        <section id="methodology" className="py-32 border-t border-white/10 bg-[#050505]">
+        <section id="methodology" className="py-32 bg-[#050505] relative">
             <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-2 gap-20 items-center">
                 <div>
                     <div className="text-blue-500 font-mono text-xs mb-4">THE METHODOLOGY</div>
-                    <h2 className="text-4xl font-bold mb-6">We track patterns, not names.</h2>
+                    <motion.h2
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5 }}
+                        className="text-4xl font-bold mb-6"
+                    >
+                        We track patterns, not names.
+                    </motion.h2>
                     <p className="text-gray-400 mb-8 leading-relaxed">
                         Traditional tools rely on cookies and creeping on individual people. We take a different approach. By analyzing the *shape* of a session—the rapid scroll through pricing, the copy-paste of an API key, the forwarding of a URL—we detect intent at the account level.
                     </p>
@@ -400,16 +531,25 @@ const MethodologyWaitlist = () => {
                     <div className="absolute -inset-4 border border-white/5 rounded-2xl z-0 transform rotate-2" />
                 </div>
             </div>
+            <SectionBorder />
         </section>
     )
 }
 
 const Pricing = () => {
     return (
-        <section id="pricing" className="py-32 bg-black border-t border-white/10 relative">
+        <section id="pricing" className="py-32 bg-black relative">
             <div className="max-w-7xl mx-auto px-6">
                 <div className="text-center mb-20">
-                    <h2 className="text-4xl font-bold mb-6">Simple, transparent pricing.</h2>
+                    <motion.h2
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5 }}
+                        className="text-4xl font-bold mb-6"
+                    >
+                        Simple, transparent pricing.
+                    </motion.h2>
                     <p className="text-xl text-gray-400">Start for free, scale as you grow.</p>
                 </div>
 
@@ -465,16 +605,25 @@ const Pricing = () => {
                     </div>
                 </div>
             </div>
+            <SectionBorder />
         </section>
     )
 }
 
 const CTA = () => {
     return (
-        <section className="py-32 border-t border-white/10 relative overflow-hidden">
+        <section className="py-32 relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(0,112,243,0.1),transparent)] pointer-events-none" />
             <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
-                <h2 className="text-5xl font-bold mb-8">Ready to deploy?</h2>
+                <motion.h2
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5 }}
+                    className="text-5xl font-bold mb-8"
+                >
+                    Ready to deploy?
+                </motion.h2>
                 <p className="text-gray-400 mb-10 text-lg">
                     Start identifying your high-intent traffic today. No credit card required.
                 </p>
@@ -490,13 +639,14 @@ const CTA = () => {
                     </a>
                 </div>
             </div>
+            <SectionBorder />
         </section>
     )
 }
 
 const Footer = () => {
     return (
-        <footer className="py-12 border-t border-white/10 bg-[#020202] text-sm">
+        <footer className="py-12 bg-[#020202] text-sm relative">
             <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-6 gap-8">
                 <div className="col-span-2">
                     <div className="flex items-center space-x-2 font-bold mb-4">
@@ -554,6 +704,7 @@ const Footer = () => {
                     </ul>
                 </div>
             </div>
+            <SectionBorder />
         </footer>
     )
 }

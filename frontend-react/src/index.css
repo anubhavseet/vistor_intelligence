@@ -42,11 +42,45 @@
   line-height: 1.5;
   font-weight: 400;
 
+  color-scheme: light;
+
+  /* Light Theme Defaults */
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221.2 83.2% 53.3%;
+
+  --radius: 0.5rem;
+}
+
+.dark {
   color-scheme: dark;
 
-  /* Vercel-ish Dark Theme */
+  /* Dark Theme Overrides */
   --background: 0 0% 0%;
-  /* Pure Black */
   --foreground: 0 0% 100%;
 
   --card: 0 0% 3%;
@@ -55,7 +89,6 @@
   --popover: 0 0% 3%;
   --popover-foreground: 0 0% 100%;
 
-  /* Vercel Blue */
   --primary: 212 100% 48%;
   --primary-foreground: 0 0% 100%;
 
@@ -63,21 +96,17 @@
   --secondary-foreground: 0 0% 100%;
 
   --muted: 0 0% 9%;
-  --muted-foreground: 0 0% 40%;
-  /* Distinctive dark gray text */
+  --muted-foreground: 0 0% 60%;
 
   --accent: 0 0% 9%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 84.2% 60.2%;
+  --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
 
   --border: 0 0% 12%;
-  /* Very subtle borders */
   --input: 0 0% 12%;
   --ring: 212 100% 48%;
-
-  --radius: 0.5rem;
 }
 
 @layer base {

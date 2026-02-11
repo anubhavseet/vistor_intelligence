@@ -11,8 +11,11 @@ async function bootstrap() {
   // Enable CORS
   app.enableCors({
     origin: (origin, callback) => {
-      // Allow any localhost origin or no origin (like mobile/Postman)
-      if (!origin || origin.includes('localhost')) {
+      // Allow any localhost origin, Vercel domains, ngrok, or no origin (like mobile/Postman)
+      if (!origin ||
+        origin.includes('localhost') ||
+        origin.includes('vercel.app') ||
+        origin.includes('ngrok')) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

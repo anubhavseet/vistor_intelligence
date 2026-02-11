@@ -114,23 +114,37 @@ export class GeminiService {
       It MUST feel NATIVE to the host site by using the provided design tokens exactly.
 
       Design Guidelines (MANDATORY):
-      1. **Aesthetics**: Use "Premium Modern" design.
-         - IF design tokens are provided, use them strictly.
-         - Unless specified otherwise, use subtle glassmorphism (backdrop-filter: blur).
-         - Use modern gradients and profound drop shadows (box-shadow: 0 10px 30px -10px rgba(...)).
-         - Animations: Add smooth entry animations (e.g., fade-in-up) using CSS @keyframes.
-      2. **Layout**:
+      1. **Aesthetics**: "Native Chameleon Mode" (Highest Priority).
+         - The component MUST look like it was built by the original site developers.
+         - IF design tokens are provided, use them STRICTLY.
+         - IF NO design tokens are provided, analyze the 'Current Page Section Context' HTML to infer:
+            - Font family (use 'inherit' or the dominant font).
+            - Border radius (match the button/card radius in the snippet).
+            - Shadow depth (flat, subtle, or deep - match the context).
+         - DO NOT default to "Glassmorphism" or "Modern Gradients" unless the host site uses them.
+         - Text Contrast: Ensure AA standard compliance.
+      
+      2. **Fallback Strategy** (If context is missing/ambiguous):
+         - Use a "Clean, Minimalist SaaS" style.
+         - Font: system-ui, -apple-system, sans-serif.
+         - Background: White (#ffffff) or very light gray (#f9fafb).
+         - Colors: Neutral grays for borders/text, Blue (#2563eb) for primary actions if no other color detected.
+         - Shadows: Subtle (box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1)).
+         - NO gradients, NO glassmorphism, NO complex animations.
+
+      3. **Layout**:
          - The component is isolated in a Shadow DOM.
          - Use ':host' for the root container styles.
-         - For Modals: Use polished overlays.
-         - For Popups: clear visual hierarchy.
-      3. **Responsiveness**: Must work perfectly on Mobile and Desktop.
+         - For Modals: Use a backdrop that matches the site's modal style (often semi-transparent black).
+         - For Popups: clear visual hierarchy but matching the site's card design.
+
+      4. **Responsiveness**: Must work perfectly on Mobile and Desktop.
 
       Technical Constraints (CRITICAL):
       1. **Shadow DOM Environment**:
          - DO NOT try to style 'body' or 'html'.
          - CSS classes are scoped.
-         - Use the extracted font-family in :host.
+         - Use the extracted font-family in :host or 'font-family: inherit'.
       2. **JavaScript**:
          - Write standard Vanilla JS.
          - The environment proxies 'document' to the Shadow Root.

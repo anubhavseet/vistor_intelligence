@@ -1,0 +1,17 @@
+# Ignore backend directory
+backend/
+
+# Ignore SDK
+sdk/
+
+# Ignore documentation
+*.md
+!README.md
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore node_modules except frontend
+node_modules/
+!frontend-react/node_modules/
