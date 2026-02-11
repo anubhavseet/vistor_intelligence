@@ -22,7 +22,7 @@ export default function IntentStream({ siteId }: { siteId: string }) {
     const fetchSessions = async () => {
         try {
             // In production, use env var for API URL
-            const res = await fetch(`http://localhost:4040/api/v1/track/live/${siteId}`);
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/api/v1/track/live/${siteId}`);
             if (!res.ok) throw new Error("Failed to fetch");
             const data = await res.json();
             setSessions(data);
@@ -113,8 +113,8 @@ function SessionCard({ session }: { session: VisitorSession }) {
                 </div>
                 <div className="text-right">
                     <div className={`inline-block px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide ${session.intentCategory === 'Lead' ? 'bg-emerald-900/50 text-emerald-400' :
-                            session.intentCategory === 'Researcher' ? 'bg-blue-900/50 text-blue-400' :
-                                'bg-slate-800 text-slate-400'
+                        session.intentCategory === 'Researcher' ? 'bg-blue-900/50 text-blue-400' :
+                            'bg-slate-800 text-slate-400'
                         }`}>
                         {session.intentCategory}
                     </div>
