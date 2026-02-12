@@ -22,6 +22,18 @@ export class GeoType {
 }
 
 @ObjectType()
+export class SessionFlags {
+    @Field({ nullable: true })
+    isVPN?: boolean;
+    @Field({ nullable: true })
+    isMobile?: boolean;
+    @Field({ nullable: true })
+    isDataCenter?: boolean;
+    @Field({ nullable: true })
+    isProxy?: boolean;
+}
+
+@ObjectType()
 export class VisitorSessionType {
     @Field()
     sessionId: string;
@@ -55,6 +67,18 @@ export class VisitorSessionType {
 
     @Field()
     isActive: boolean;
+
+    @Field({ nullable: true })
+    referrer?: string;
+
+    @Field(() => Int, { defaultValue: 0 })
+    totalTimeSpent: number;
+
+    @Field({ nullable: true })
+    userAgent?: string;
+
+    @Field(() => SessionFlags, { nullable: true })
+    flags?: SessionFlags;
 }
 
 @ObjectType()
@@ -115,6 +139,18 @@ export class SignalBatchInput {
 
     @Field(() => String, { nullable: true, description: 'JSON string of interactions map' })
     interactions?: string;
+
+    @Field(() => String, { nullable: true, description: 'JSON string of forms map' })
+    forms?: string;
+
+    @Field(() => String, { nullable: true, description: 'JSON string of performance metrics' })
+    performance?: string;
+
+    @Field(() => String, { nullable: true, description: 'JSON string of errors array' })
+    errors?: string;
+
+    @Field(() => String, { nullable: true, description: 'JSON string of mouse trace array' })
+    mouse_trace?: string;
 
     @Field({ nullable: true })
     url?: string;

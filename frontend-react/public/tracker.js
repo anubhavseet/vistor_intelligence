@@ -41,6 +41,8 @@
         localStorage.setItem('vi_user_id', userId);
     }
 
+
+
     // --- Helper: GraphQL Fetcher ---
     async function graphqlFetch(query, variables = {}) {
         const response = await fetch(CONFIG.graphqlEndpoint, {
@@ -60,7 +62,6 @@
     }
 
     // Signal Accumulator
-    // Signal Accumulator
     let signals = {
         dwell_time: {}, // element_id: seconds
         scroll_velocity: 0, // max pixels/sec observed
@@ -73,7 +74,12 @@
         events: [], // generic events
         interactions: {}, // element_selector -> { clicks: 0, hovers: 0, inputs: 0, last_timestamp: timestamp }
         url: window.location.href, // Initial URL
-        referrer: document.referrer // Traffic source
+        referrer: document.referrer, // Traffic source
+        // New Signals
+        forms: {}, // field_name -> { time_focused: ms, refills: count }
+        performance: {}, // lcp, cls, fid
+        errors: [], // { msg, stack, time }
+        mouse_trace: [] // { x, y, time } (sampled)
     };
 
     // Internal Logic State
@@ -197,7 +203,6 @@
         mutationObserver.observe(document.body, { childList: true, subtree: true });
     }
 
-    // --- Scroll ---
     // --- Scroll ---
     window.addEventListener('scroll', () => {
         if (!isTrackingActive) return;
@@ -353,6 +358,88 @@
         }
     });
 
+    // --- Form Analytics ---
+    const formTimers = {};
+    document.addEventListener('focus', (e) => {
+        if (!isTrackingActive) return;
+        const target = e.target;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+            const name = target.name || target.id || getSelector(target);
+            formTimers[name] = Date.now();
+        }
+    }, { capture: true });
+
+    document.addEventListener('blur', (e) => {
+        if (!isTrackingActive) return;
+        const target = e.target;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+            const name = target.name || target.id || getSelector(target);
+            if (formTimers[name]) {
+                const duration = Date.now() - formTimers[name];
+                if (!signals.forms[name]) signals.forms[name] = { time_focused: 0, refills: 0 };
+                signals.forms[name].time_focused += duration;
+                delete formTimers[name];
+            }
+        }
+    }, { capture: true });
+
+    document.addEventListener('change', (e) => {
+        if (!isTrackingActive) return;
+        const target = e.target;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+            const name = target.name || target.id || getSelector(target);
+            if (!signals.forms[name]) signals.forms[name] = { time_focused: 0, refills: 0 };
+            signals.forms[name].refills++;
+        }
+    }, { capture: true });
+
+    // --- Performance (Web Vitals) ---
+    if (window.PerformanceObserver) {
+        try {
+            const perfObserver = new PerformanceObserver((list) => {
+                list.getEntries().forEach((entry) => {
+                    if (entry.entryType === 'largest-contentful-paint') {
+                        signals.performance.lcp = entry.startTime;
+                    }
+                    if (entry.entryType === 'layout-shift' && !entry.hadRecentInput) {
+                        signals.performance.cls = (signals.performance.cls || 0) + entry.value;
+                    }
+                    if (entry.entryType === 'first-input') {
+                        signals.performance.fid = entry.processingStart - entry.startTime;
+                    }
+                });
+            });
+            perfObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+            perfObserver.observe({ type: 'layout-shift', buffered: true });
+            perfObserver.observe({ type: 'first-input', buffered: true });
+        } catch (e) { console.warn("Tracker: PerfObserver error", e); }
+    }
+
+    // --- JS Errors ---
+    window.addEventListener('error', (e) => {
+        if (!isTrackingActive) return;
+        if (signals.errors.length < 5) {
+            signals.errors.push({
+                msg: e.message,
+                stack: e.error ? e.error.stack : '',
+                time: Date.now()
+            });
+        }
+    });
+
+    // --- Mouse Trace (Sampled) ---
+    let mouseSampleTimer = null;
+    document.addEventListener('mousemove', (e) => {
+        if (!isTrackingActive) return;
+        if (mouseSampleTimer) return;
+        mouseSampleTimer = setTimeout(() => {
+            if (signals.mouse_trace.length < 50) { // Limit per batch
+                signals.mouse_trace.push({ x: e.clientX, y: e.clientY, time: Date.now() });
+            }
+            mouseSampleTimer = null;
+        }, 200); // 5 samples/sec
+    }, { passive: true });
+
 
     // --- Batch Processing ---
     async function sendBatch() {
@@ -384,6 +471,19 @@
 
         if (!hasData) return;
 
+        const metadata = {
+            screen: {
+                width: window.screen.width,
+                height: window.screen.height,
+                colorDepth: window.screen.colorDepth,
+                orientation: (screen.orientation || {}).type
+            },
+            language: navigator.language,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            platform: navigator.platform,
+            connection: navigator.connection ? navigator.connection.effectiveType : 'unknown'
+        };
+
         const input = {
             sessionId,
             signals: {
@@ -397,12 +497,18 @@
                 events: JSON.stringify(signals.events),
                 interactions: JSON.stringify(signals.interactions),
                 url: window.location.href,
-                referrer: document.referrer
+                referrer: document.referrer,
+                forms: JSON.stringify(signals.forms),
+                performance: JSON.stringify(signals.performance),
+                errors: JSON.stringify(signals.errors),
+                mouse_trace: JSON.stringify(signals.mouse_trace)
             },
             timestamp: Date.now(),
             pageUrl: window.location.href,
             referrer: document.referrer,
-            userAgent: navigator.userAgent
+            userAgent: navigator.userAgent,
+            metadata: JSON.stringify(metadata),
+            eventType: 'batch'
         };
 
         const mutation = `
@@ -429,7 +535,11 @@
             dead_clicks: [],
             events: [],
             interactions: {},
-            url: window.location.href
+            url: window.location.href,
+            forms: {},
+            performance: {},
+            errors: [],
+            mouse_trace: []
         };
         accumulatedDwell = {};
 
@@ -523,7 +633,6 @@
             `;
             shadow.appendChild(script);
         }
-
         if (injection_target_selector === 'body') {
             Object.assign(host.style, {
                 position: 'fixed', bottom: '20px', right: '20px', width: 'auto', maxWidth: '400px'

@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, AmpersandIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuthStore } from "@/store/auth-store";
@@ -10,12 +10,14 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
     const { logout } = useAuthStore()
+    const location = useLocation()
 
     type NavigationItem = {
         name: string;
         href?: string;
         icon?: any;
         children?: NavigationItem[];
+        checkActive?: (pathname: string) => boolean;
     }
 
     const navigation: NavigationItem[] = [
@@ -36,7 +38,38 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
             icon: BarChart3,
             children: [
                 { name: "Overview", href: "/dashboard/reports", icon: BarChart3 },
-                { name: "Site Analytics", href: "/dashboard/site-analytics", icon: LineChart },
+                {
+                    name: "Site Analytics",
+                    href: "/dashboard/site-analytics",
+                    icon: LineChart,
+                    checkActive: (path) => {
+                        // Check if it's strictly /dashboard/site-analytics
+                        if (path === '/dashboard/site-analytics') return true;
+
+                        // Check if it's a site detail page (/dashboard/:siteId)
+                        // but NOT one of the other reserved routes
+                        const parts = path.split('/');
+                        // parts: ['', 'dashboard', ':id']
+                        if (parts.length >= 3 && parts[1] === 'dashboard') {
+                            const id = parts[2];
+                            const reserved = [
+                                'sites',
+                                'crawling',
+                                'intent-prompts',
+                                'tracking-code',
+                                'integrations',
+                                'reports',
+                                'settings',
+                                'users',
+                                'site-analytics',
+                                ''
+                            ];
+                            // If ID is not reserved, it's a site ID, so we are in Site Analytics view
+                            return !reserved.includes(id);
+                        }
+                        return false;
+                    }
+                },
             ]
         },
         {
@@ -88,7 +121,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                                                 cn(
                                                     "group flex items-center rounded-md py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                                     isCollapsed ? "justify-center px-0" : "px-2",
-                                                    isActive
+                                                    isActive || (child.checkActive && child.checkActive(location.pathname))
                                                         ? "bg-gradient-to-r from-violet-500/10 to-indigo-500/10 text-violet-400 border-r-2 border-violet-500"
                                                         : "text-muted-foreground"
                                                 )

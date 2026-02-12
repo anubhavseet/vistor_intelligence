@@ -1,193 +1,189 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
-import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schema';
-import { Account, AccountDocument } from '../common/schemas/account.schema';
+import { AnalyticsDashboardData } from './dto/analytics.types';
 
 @Injectable()
 export class AnalyticsService {
+  private readonly logger = new Logger(AnalyticsService.name);
+
   constructor(
     @InjectModel(VisitorSession.name)
     private visitorSessionModel: Model<VisitorSessionDocument>,
-    @InjectModel(PageEvent.name)
-    private pageEventModel: Model<PageEventDocument>,
-    @InjectModel(Account.name)
-    private accountModel: Model<AccountDocument>,
-  ) {}
+  ) { }
 
-  /**
-   * Get live active visitors
-   */
-  async getLiveVisitors(siteId: string): Promise<VisitorSession[]> {
-    return this.visitorSessionModel
-      .find({
-        siteId,
-        isActive: true,
-        lastActivityAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) }, // Active in last 30 min
-      })
-      .sort({ lastActivityAt: -1 })
-      .exec();
-  }
+  async getDashboardData(siteId: string, days: number = 30): Promise<AnalyticsDashboardData> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
 
-  /**
-   * Get live visitor count
-   */
-  async getLiveVisitorCount(siteId: string): Promise<number> {
-    return this.visitorSessionModel.countDocuments({
-      siteId,
-      isActive: true,
-      lastActivityAt: { $gte: new Date(Date.now() - 30 * 60 * 1000) },
-    });
-  }
-
-  /**
-   * Get visitor map data (geo distribution)
-   */
-  async getVisitorMap(siteId: string, startDate?: Date, endDate?: Date) {
-    const query: any = { siteId };
-    if (startDate || endDate) {
-      query.startedAt = {};
-      if (startDate) query.startedAt.$gte = startDate;
-      if (endDate) query.startedAt.$lte = endDate;
-    }
-
-    const sessions = await this.visitorSessionModel.find(query).exec();
-
-    // Group by country
-    const countryMap = new Map<string, number>();
-    const geoPoints: Array<{ lat: number; lng: number; country: string }> = [];
-
-    sessions.forEach((session) => {
-      if (session.geo?.country) {
-        countryMap.set(
-          session.geo.country,
-          (countryMap.get(session.geo.country) || 0) + 1,
-        );
-      }
-      if (session.geo?.lat && session.geo?.lng) {
-        geoPoints.push({
-          lat: session.geo.lat,
-          lng: session.geo.lng,
-          country: session.geo.country || 'Unknown',
-        });
-      }
-    });
-
-    return {
-      points: geoPoints,
-      countryCounts: Array.from(countryMap.entries()).map(([country, count]) => ({
-        country,
-        count,
-      })),
-      totalVisitors: sessions.length,
-    };
-  }
-
-  /**
-   * Get page flow analytics
-   */
-  async getPageFlow(siteId: string, startDate?: Date, endDate?: Date) {
-    const query: any = { siteId };
-    if (startDate || endDate) {
-      query.timestamp = {};
-      if (startDate) query.timestamp.$gte = startDate;
-      if (endDate) query.timestamp.$lte = endDate;
-    }
-
-    const events = await this.pageEventModel
-      .find(query)
-      .sort({ timestamp: 1 })
-      .exec();
-
-    // Group by session and build flow
-    const sessionFlows = new Map<string, string[]>();
-    events.forEach((event) => {
-      if (!sessionFlows.has(event.sessionId)) {
-        sessionFlows.set(event.sessionId, []);
-      }
-      if (event.eventType === 'view') {
-        sessionFlows.get(event.sessionId)?.push(event.pageUrl);
-      }
-    });
-
-    // Count page transitions
-    const transitions = new Map<string, number>();
-    sessionFlows.forEach((flow) => {
-      for (let i = 0; i < flow.length - 1; i++) {
-        const key = `${flow[i]} -> ${flow[i + 1]}`;
-        transitions.set(key, (transitions.get(key) || 0) + 1);
-      }
-    });
-
-    return {
-      flows: Array.from(sessionFlows.values()),
-      topTransitions: Array.from(transitions.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([transition, count]) => ({ transition, count })),
-    };
-  }
-
-  /**
-   * Get engagement trends
-   */
-  async getEngagementTrends(siteId: string, days: number = 30) {
-    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const sessions = await this.visitorSessionModel
-      .find({
+    const matchStage = {
+      $match: {
         siteId,
         startedAt: { $gte: startDate },
-      })
-      .exec();
+      },
+    };
 
-    // Group by day
-    const dailyStats = new Map<string, { visitors: number; pageViews: number; avgTime: number }>();
+    // 1. Overview Stats
+    const overviewPipeline = [
+      matchStage,
+      {
+        $group: {
+          _id: null,
+          totalSessions: { $sum: 1 },
+          totalPageViews: { $sum: '$totalPageViews' },
+          totalDuration: { $sum: { $subtract: [{ $ifNull: ['$endedAt', '$lastActivityAt'] }, '$startedAt'] } },
+          bounces: {
+            $sum: {
+              $cond: [{ $lte: ['$totalPageViews', 1] }, 1, 0],
+            },
+          },
+        },
+      },
+    ];
 
-    sessions.forEach((session) => {
-      const date = session.startedAt.toISOString().split('T')[0];
-      if (!dailyStats.has(date)) {
-        dailyStats.set(date, { visitors: 0, pageViews: 0, avgTime: 0 });
-      }
-      const stats = dailyStats.get(date)!;
-      stats.visitors += 1;
-      stats.pageViews += session.totalPageViews;
-      stats.avgTime += session.totalTimeSpent;
-    });
+    const [overview] = await this.visitorSessionModel.aggregate(overviewPipeline);
+    const totalSessions = overview?.totalSessions || 0;
+    const avgDuration = totalSessions > 0 ? (overview?.totalDuration || 0) / 1000 / totalSessions : 0;
+    const bounceRate = totalSessions > 0 ? ((overview?.bounces || 0) / totalSessions) * 100 : 0;
 
-    return Array.from(dailyStats.entries())
-      .map(([date, stats]) => ({
-        date,
-        visitors: stats.visitors,
-        pageViews: stats.pageViews,
-        avgTime: stats.visitors > 0 ? stats.avgTime / stats.visitors : 0,
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    // 2. Referrers
+    const referrerPipeline = [
+      matchStage,
+      { $match: { referrer: { $nin: [null, ''] } } },
+      {
+        $group: {
+          _id: '$referrer',
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ];
+    const referrers = await this.visitorSessionModel.aggregate(referrerPipeline as any[]);
+
+    // 3. Geo Stats
+    const geoPipeline = [
+      matchStage,
+      { $match: { 'geo.country': { $ne: null } } },
+      {
+        $group: {
+          _id: '$geo.country',
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ];
+    const geoStats = await this.visitorSessionModel.aggregate(geoPipeline as any[]);
+
+    // 4. Top Pages
+    const pagesPipeline = [
+      matchStage,
+      { $unwind: '$pagesVisited' },
+      {
+        $group: {
+          _id: '$pagesVisited',
+          views: { $sum: 1 },
+          visitors: { $addToSet: '$sessionId' },
+        },
+      },
+      {
+        $project: {
+          url: '$_id',
+          views: 1,
+          visitors: { $size: '$visitors' },
+        },
+      },
+      { $sort: { views: -1 } },
+      { $limit: 10 },
+    ];
+    const topPages = await this.visitorSessionModel.aggregate(pagesPipeline as any[]);
+
+    // 5. Daily Stats
+    const dailyPipeline = [
+      matchStage,
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$startedAt' },
+          },
+          sessions: { $sum: 1 },
+          pageViews: { $sum: '$totalPageViews' },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ];
+    const dailyStats = await this.visitorSessionModel.aggregate(dailyPipeline as any[]);
+
+    // 6. Heatmap Points
+    const heatPipeline = [
+      matchStage,
+      { $match: { 'geo.lat': { $ne: null } } },
+      {
+        $group: {
+          _id: { lat: { $round: ['$geo.lat', 1] }, lng: { $round: ['$geo.lng', 1] } },
+          weight: { $sum: 1 },
+          avgIntent: { $avg: '$intentScore' }
+        },
+      },
+      { $limit: 1000 },
+    ];
+    const heatPoints = await this.visitorSessionModel.aggregate(heatPipeline as any[]);
+
+    return {
+      overview: {
+        totalSessions,
+        totalPageViews: overview?.totalPageViews || 0,
+        avgSessionDuration: parseFloat(avgDuration.toFixed(1)),
+        bounceRate: parseFloat(bounceRate.toFixed(1)),
+      },
+      dailyStats: dailyStats.map(d => ({ date: d._id, sessions: d.sessions, pageViews: d.pageViews })),
+      heatMapPoints: heatPoints.map(h => ({ lat: h._id.lat, lng: h._id.lng, weight: h.weight, avgIntent: h.avgIntent })),
+      referrers: referrers.map(r => ({ source: r._id, count: r.count })),
+      geoStats: geoStats.map(g => ({ country: g._id, count: g.count })),
+      topPages: topPages.map(p => ({ url: p.url, views: p.views, visitors: p.visitors })),
+    };
   }
 
-  /**
-   * Export accounts to CSV format
-   */
   async exportAccountsToCSV(siteId: string): Promise<string> {
-    const accounts = await this.accountModel.find({ siteId }).exec();
+    const sessions = await this.visitorSessionModel.find({ siteId }).sort({ startedAt: -1 }).limit(1000).exec();
 
-    const headers = ['Account ID', 'Organization', 'Domain', 'Intent Score', 'Engagement Score', 'Category', 'Total Sessions', 'Last Seen'];
-    const rows = accounts.map((acc: any) => [
-      acc.accountId || '',
-      acc.organizationName || '',
-      acc.domain || '',
-      acc.intentScore || 0,
-      acc.engagementScore || 0,
-      acc.category || '',
-      acc.totalSessions || 0,
-      acc.lastSeenAt ? acc.lastSeenAt.toISOString() : '',
-    ]);
+    if (!sessions || sessions.length === 0) {
+      return 'No data found';
+    }
 
-    const csv = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-    ].join('\n');
+    const header = [
+      'Session ID',
+      'Organization',
+      'Date',
+      'Duration (s)',
+      'Page Views',
+      'City',
+      'Country',
+      'Referrer'
+    ].join(',');
 
-    return csv;
+    const rows = sessions.map(session => {
+      const date = new Date(session.startedAt).toISOString().split('T')[0];
+      const duration = session.totalTimeSpent || 0;
+      const org = session.organizationName || 'Anonymous';
+      const city = session.geo?.city || 'Unknown';
+      const country = session.geo?.country || 'Unknown';
+      const referrer = session.referrer || 'Direct';
+
+      return [
+        session.sessionId,
+        `"${org.replace(/"/g, '""')}"`,
+        date,
+        duration,
+        session.totalPageViews,
+        `"${city.replace(/"/g, '""')}"`,
+        `"${country.replace(/"/g, '""')}"`,
+        `"${referrer.replace(/"/g, '""')}"`
+      ].join(',');
+    });
+
+    return [header, ...rows].join('\n');
   }
 }

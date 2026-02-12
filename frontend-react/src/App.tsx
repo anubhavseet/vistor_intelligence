@@ -27,6 +27,7 @@ import ReportsPage from '@/pages/Reports'
 import SettingsPage from '@/pages/Settings'
 import SiteDetailPage from '@/pages/SiteDetail'
 import SiteAnalyticsListPage from '@/pages/dashboard/SiteAnalyticsList'
+import SiteAnalyticsPage from '@/pages/dashboard/SiteAnalytics'
 import IntentPromptsPage from '@/pages/IntentPromptsPage'
 import IntentPromptsSelectionPage from '@/pages/IntentPromptsSelection'
 import UsersPage from '@/pages/UsersPage'
@@ -68,6 +69,7 @@ function App() {
             <Route index element={<DashboardPage />} />
             <Route path="sites" element={<SitesPage />} />
             <Route path="sites/:siteId" element={<SiteOverviewPage />} />
+            <Route path="sites/:siteId/analytics" element={<SiteAnalyticsPage />} />
             <Route path="sites/:siteId/settings" element={<SiteSettingsPage />} />
             <Route path="sites/:siteId/prompts" element={<IntentPromptsPage />} />
             <Route path="intent-prompts" element={<IntentPromptsSelectionPage />} />

@@ -16,6 +16,10 @@ export interface SignalBatch {
   dead_clicks?: any[]; // New
   events: { type: string; timestamp: number }[];
   interactions?: Record<string, { clicks: number; hovers: number; inputs: number; last_timestamp: number }>;
+  forms?: Record<string, { time_focused: number; refills: number }>;
+  performance?: { lcp?: number; cls?: number; fid?: number };
+  errors?: { msg: string; stack: string; time: number }[];
+  mouse_trace?: { x: number; y: number; time: number }[];
   url?: string;
   referrer?: string; // New
 }
@@ -135,7 +139,6 @@ export class IntentService {
             ]
           };
           if (signals.url.includes("localhost")) {
-            console.log(`${site.domain}/${signals.url.split("/")[3]}`)
             filters.must.push({ key: "url", match: { value: `${site.domain}${signals.url.split("/")[3]}` } });
           } else if (signals.url) {
             filters.must.push({ key: "url", match: { value: signals.url } });

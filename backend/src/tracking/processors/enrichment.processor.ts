@@ -1,5 +1,6 @@
 import { Processor, Process } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
+import * as geoip from 'geoip-lite';
 import { Job } from 'bull';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -20,7 +21,7 @@ export class EnrichmentProcessor {
     @InjectModel(VisitorSession.name)
     private visitorSessionModel: Model<VisitorSessionDocument>,
     private enrichmentService: EnrichmentService,
-  ) {}
+  ) { }
 
   @Process()
   async handleEnrichment(job: Job<{ sessionId: string; ipAddress: string }>) {
@@ -33,25 +34,39 @@ export class EnrichmentProcessor {
         return;
       }
 
-      // Enrich IP
+      // 1. Fast local GeoIP lookup (geoip-lite)
+      const geo = geoip.lookup(ipAddress);
+      if (geo) {
+        session.geo = {
+          country: geo.country,
+          region: geo.region,
+          city: geo.city,
+          lat: geo.ll ? geo.ll[0] : 0,
+          lng: geo.ll ? geo.ll[1] : 0,
+          timezone: geo.timezone,
+        };
+      }
+
+      // 2. Enhanced enrichment (Organization, ASN, etc.) via external service
+      // This may also refine the Geo data if the external service is more accurate
       const enrichment = await this.enrichmentService.enrichIP(ipAddress);
-      if (!enrichment) {
-        this.logger.warn(`Enrichment failed for session ${sessionId}`);
-        return;
-      }
 
-      // Update session with geo data
-      if (enrichment.geo) {
-        session.geo = enrichment.geo;
-      }
-      if (enrichment.flags) {
-        session.flags = enrichment.flags;
-      }
+      if (enrichment) {
+        // Update/Refine session with external geo data
+        if (enrichment.geo) {
+          session.geo = { ...session.geo, ...enrichment.geo };
+        }
+        if (enrichment.flags) {
+          session.flags = enrichment.flags;
+        }
 
-      // If organization detected, store organization name
-      // Account linking will be handled by a separate background job
-      if (enrichment.organization) {
-        session.organizationName = enrichment.organization;
+        // If organization detected, store organization name
+        // Account linking will be handled by a separate background job
+        if (enrichment.organization) {
+          session.organizationName = enrichment.organization;
+        }
+      } else {
+        this.logger.warn(`External enrichment failed for session ${sessionId}, using local GeoIP only.`);
       }
 
       await session.save();

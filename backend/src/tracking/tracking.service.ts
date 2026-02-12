@@ -9,6 +9,8 @@ import { hashIP, generateSessionId } from '../common/utils/crypto.util';
 import { SitesService } from '../sites/sites.service';
 import { IntentService, SignalBatch } from '../intent/intent.service';
 
+import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
+
 /**
  * Tracking Service
  * 
@@ -25,6 +27,8 @@ export class TrackingService {
     @InjectModel(PageEvent.name)
     private pageEventModel: Model<PageEventDocument>,
     @InjectQueue('enrichment') private enrichmentQueue: Queue,
+    @InjectModel(RawTrackingLog.name)
+    private rawTrackingLogModel: Model<RawTrackingLogDocument>,
     private sitesService: SitesService,
     private intentService: IntentService,
   ) { }
@@ -72,6 +76,23 @@ export class TrackingService {
         sessionId: session._id.toString(),
         ipAddress: data.ipAddress,
       });
+    }
+
+
+
+    // Raw Data Retention (Data Lake)
+    try {
+      await this.rawTrackingLogModel.create({
+        siteId,
+        sessionId: data.sessionId,
+        url: data.signals.url || '',
+        timestamp: new Date(),
+        raw_signals: data.signals,
+        ipHash: hashIP(data.ipAddress || '0.0.0.0'),
+        userAgent: data.userAgent
+      });
+    } catch (e) {
+      this.logger.error(`Failed to log raw signals for session ${data.sessionId}`, e);
     }
 
     // 3. Calculate Score & AI Analysis
