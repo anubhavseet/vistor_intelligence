@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom';
 import { gql } from "@apollo/client"
 import { useQuery } from '@apollo/client/react'
 import {
     BarChart3,
     ArrowUpRight,
-    ArrowDownRight,
+
     Users,
     Clock,
     MousePointer2,
@@ -13,8 +13,7 @@ import {
     ArrowLeft
 } from 'lucide-react'
 import {
-    LineChart,
-    Line,
+
     XAxis,
     YAxis,
     CartesianGrid,
@@ -90,8 +89,8 @@ export default function SiteAnalyticsPage() {
         </div>
     )
 
-    const analytics = data?.getAnalyticsDashboard
-    const site = data?.getSite
+    const analytics = (data as any)?.getAnalyticsDashboard
+    const site = (data as any)?.getSite
 
     // Format daily stats for chart
     const chartData = analytics?.dailyStats.map((d: any) => ({
