@@ -9,15 +9,35 @@ interface VisualAnalyticsProps {
     url: string; // The specific page URL to analyze
 }
 
-export const VisualAnalytics: React.FC<VisualAnalyticsProps> = ({ siteId, url }) => {
-    const [days, setDays] = useState(30);
+interface PageSection {
+    selector: string;
+    html: string;
+    description?: string;
+}
 
-    const { data: sectionsData, loading: sectionsLoading } = useQuery(GET_PAGE_SECTIONS, {
+interface SectionMetric {
+    selector: string;
+    avgDwellTime: number;
+    clickCount: number;
+}
+
+interface PageSectionsData {
+    getPageSections: PageSection[];
+}
+
+interface SectionMetricsData {
+    getSectionMetrics: SectionMetric[];
+}
+
+export const VisualAnalytics: React.FC<VisualAnalyticsProps> = ({ siteId, url }) => {
+    const [days] = useState(30);
+
+    const { data: sectionsData, loading: sectionsLoading } = useQuery<PageSectionsData>(GET_PAGE_SECTIONS, {
         variables: { siteId, url },
         skip: !url
     });
 
-    const { data: metricsData, loading: metricsLoading } = useQuery(GET_SECTION_METRICS, {
+    const { data: metricsData, loading: metricsLoading } = useQuery<SectionMetricsData>(GET_SECTION_METRICS, {
         variables: { siteId, url, days },
         skip: !url
     });
@@ -42,7 +62,7 @@ export const VisualAnalytics: React.FC<VisualAnalyticsProps> = ({ siteId, url })
     const metrics = metricsData?.getSectionMetrics || [];
 
     // Create lookup map for metrics
-    const metricsMap = new Map(metrics.map((m: any) => [m.selector, m]));
+    const metricsMap = new Map(metrics.map((m) => [m.selector, m]));
 
     if (sections.length === 0) {
         return (
@@ -75,7 +95,7 @@ export const VisualAnalytics: React.FC<VisualAnalyticsProps> = ({ siteId, url })
                 </div>
 
                 <div className="p-8 space-y-4 pt-14">
-                    {sections.map((section: any, idx: number) => {
+                    {sections.map((section, idx) => {
                         const metric = metricsMap.get(section.selector);
                         const dwellTime = metric?.avgDwellTime || 0;
 
