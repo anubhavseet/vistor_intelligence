@@ -91,4 +91,76 @@ export class AnalyticsDashboardData {
 
     @Field(() => [PageStat])
     topPages: PageStat[];
+
+    @Field(() => [PagePerformanceStat], { nullable: true })
+    pagePerformance?: PagePerformanceStat[];
+
+    @Field(() => [UserFlowStat], { nullable: true })
+    userFlows?: UserFlowStat[];
+
+    @Field(() => [BehavioralPatternStat], { nullable: true })
+    behavioralPatterns?: BehavioralPatternStat[];
+}
+
+@ObjectType()
+export class PagePerformanceStat {
+    @Field()
+    url: string;
+
+    @Field(() => Float)
+    avgScrollDepth: number;
+
+    @Field(() => Float)
+    avgTimeOnPage: number; // seconds
+
+    @Field(() => Int)
+    rageClicks: number;
+}
+
+@ObjectType()
+export class UserFlowStat {
+    @Field()
+    source: string; // Previous Page
+
+    @Field()
+    target: string; // Next Page
+
+    @Field(() => Int)
+    count: number;
+}
+
+@ObjectType()
+export class BehavioralPatternStat {
+    @Field()
+    pattern: string; // "Rage Clicks", "Quick Bounce", "Deep Reader"
+
+    @Field(() => Int)
+    count: number;
+
+    @Field(() => [String])
+    sessionIds: string[]; // Sample sessions
+}
+
+@ObjectType()
+export class PageSection {
+    @Field()
+    selector: string;
+
+    @Field()
+    html: string;
+
+    @Field({ nullable: true })
+    description?: string;
+}
+
+@ObjectType()
+export class SectionMetric {
+    @Field()
+    selector: string;
+
+    @Field(() => Float)
+    avgDwellTime: number;
+
+    @Field(() => Int)
+    clickCount: number;
 }

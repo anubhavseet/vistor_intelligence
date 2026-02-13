@@ -2,7 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
-import { AnalyticsDashboardData } from './dto/analytics.types';
+import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
+import { AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat, PageSection, SectionMetric } from './dto/analytics.types';
+import { QdrantService } from '../qdrant/qdrant.service';
 
 @Injectable()
 export class AnalyticsService {
@@ -11,6 +13,9 @@ export class AnalyticsService {
   constructor(
     @InjectModel(VisitorSession.name)
     private visitorSessionModel: Model<VisitorSessionDocument>,
+    @InjectModel(RawTrackingLog.name)
+    private rawTrackingLogModel: Model<RawTrackingLogDocument>,
+    private qdrantService: QdrantService,
   ) { }
 
   async getDashboardData(siteId: string, days: number = 30): Promise<AnalyticsDashboardData> {
@@ -143,7 +148,236 @@ export class AnalyticsService {
       referrers: referrers.map(r => ({ source: r._id, count: r.count })),
       geoStats: geoStats.map(g => ({ country: g._id, count: g.count })),
       topPages: topPages.map(p => ({ url: p.url, views: p.views, visitors: p.visitors })),
+      pagePerformance: await this.getPagePerformance(siteId, days),
+      userFlows: await this.getUserFlows(siteId, days),
+      behavioralPatterns: await this.getBehavioralPatterns(siteId, days),
     };
+  }
+
+  async getPagePerformance(siteId: string, days: number): Promise<PagePerformanceStat[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const pipeline: any[] = [
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          'raw_signals.url': { $exists: true }
+        }
+      },
+      {
+        $group: {
+          _id: '$raw_signals.url',
+          avgScrollDepth: { $avg: '$raw_signals.scroll_depth' },
+          avgTimeOnPage: {
+            $avg: {
+              $divide: [{ $ifNull: ['$raw_signals.dwell_time.total', 0] }, 1000]
+            }
+          },
+          rageClicks: { $sum: '$raw_signals.rage_clicks' }
+        }
+      },
+      {
+        $project: {
+          url: '$_id',
+          avgScrollDepth: { $round: ['$avgScrollDepth', 2] },
+          avgTimeOnPage: { $round: ['$avgTimeOnPage', 1] },
+          rageClicks: 1
+        }
+      },
+      { $sort: { avgTimeOnPage: -1 } },
+      { $limit: 10 }
+    ];
+
+    return this.rawTrackingLogModel.aggregate(pipeline);
+  }
+
+  async getUserFlows(siteId: string, days: number): Promise<UserFlowStat[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const pipeline = [
+      {
+        $match: {
+          siteId,
+          startedAt: { $gte: startDate },
+          'pagesVisited.1': { $exists: true } // At least 2 pages
+        }
+      },
+      {
+        $project: {
+          pagesVisited: 1
+        }
+      }
+    ];
+
+    const sessions = await this.visitorSessionModel.aggregate(pipeline);
+    const flowMap = new Map<string, number>();
+
+    sessions.forEach(session => {
+      const pages = session.pagesVisited;
+      for (let i = 0; i < pages.length - 1; i++) {
+        const source = pages[i];
+        const target = pages[i + 1];
+        if (source && target && source !== target) {
+          const key = `${source}|${target}`;
+          flowMap.set(key, (flowMap.get(key) || 0) + 1);
+        }
+      }
+    });
+
+    const flows: UserFlowStat[] = [];
+    flowMap.forEach((count, key) => {
+      const [source, target] = key.split('|');
+      flows.push({ source, target, count });
+    });
+
+    return flows.sort((a, b) => b.count - a.count).slice(0, 15);
+  }
+
+  async getBehavioralPatterns(siteId: string, days: number): Promise<BehavioralPatternStat[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // 1. Rage Clicks
+    const rageClickPipeline = [
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          'raw_signals.rage_clicks': { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          sessionIds: { $addToSet: '$sessionId' }
+        }
+      }
+    ];
+    const rageResult = await this.rawTrackingLogModel.aggregate(rageClickPipeline);
+
+    // 2. Dead Clicks (High error rate)
+    const deadClickPipeline = [
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          'raw_signals.errors': { $ne: [] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          sessionIds: { $addToSet: '$sessionId' }
+        }
+      }
+    ];
+    const deadResult = await this.rawTrackingLogModel.aggregate(deadClickPipeline);
+
+    return [
+      {
+        pattern: 'Rage Clicks',
+        count: rageResult[0]?.count || 0,
+        sessionIds: (rageResult[0]?.sessionIds || []).slice(0, 5)
+      },
+      {
+        pattern: 'JS Errors',
+        count: deadResult[0]?.count || 0,
+        sessionIds: (deadResult[0]?.sessionIds || []).slice(0, 5)
+      }
+    ];
+  }
+
+  async getPageSections(siteId: string, url: string): Promise<PageSection[]> {
+    try {
+      let points = await this.qdrantService.scroll(
+        {
+          must: [
+            { key: 'siteId', match: { value: siteId } },
+            { key: 'url', match: { value: url } }
+          ]
+        },
+        200
+      );
+
+      // Retry with/without trailing slash if no points found
+      if (points.length === 0) {
+        const altUrl = url.endsWith('/') ? url.slice(0, -1) : `${url}/`;
+        points = await this.qdrantService.scroll(
+          {
+            must: [
+              { key: 'siteId', match: { value: siteId } },
+              { key: 'url', match: { value: altUrl } }
+            ]
+          },
+          200
+        );
+      }
+
+      return points.map(item => ({
+        selector: item.payload?.selector as string,
+        html: item.payload?.raw_html as string,
+        description: item.payload?.description as string
+      }));
+    } catch (error) {
+      this.logger.error(`Error fetching page sections for ${url}`, error);
+      return [];
+    }
+  }
+
+  async getSectionMetrics(siteId: string, url: string, days: number): Promise<SectionMetric[]> {
+    // Aggregate dwell time from raw_tracking_logs for this specific URL
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const pipeline = [
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          'raw_signals.url': url
+        }
+      },
+      {
+        $project: {
+          dwell_time: '$raw_signals.dwell_time'
+        }
+      }
+    ];
+
+    const logs = await this.rawTrackingLogModel.aggregate(pipeline);
+
+    // Calculate metrics in code because dwell_time is a dynamic map
+    const sectionStats = new Map<string, { totalTime: number, visits: number }>();
+
+    logs.forEach(log => {
+      const dwellMap = log.dwell_time || {};
+      Object.keys(dwellMap).forEach(selector => {
+        if (selector === 'total') return;
+
+        const time = dwellMap[selector];
+        const current = sectionStats.get(selector) || { totalTime: 0, visits: 0 };
+        sectionStats.set(selector, {
+          totalTime: current.totalTime + time,
+          visits: current.visits + 1
+        });
+      });
+    });
+
+    const metrics: SectionMetric[] = [];
+    sectionStats.forEach((stat, selector) => {
+      metrics.push({
+        selector,
+        avgDwellTime: parseFloat((stat.totalTime / stat.visits / 1000).toFixed(2)),
+        clickCount: 0 // Placeholder, requires click tracking per element in future
+      });
+    });
+
+    return metrics.sort((a, b) => b.avgDwellTime - a.avgDwellTime);
   }
 
   async exportAccountsToCSV(siteId: string): Promise<string> {

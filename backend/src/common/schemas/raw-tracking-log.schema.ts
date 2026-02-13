@@ -31,4 +31,3 @@ export const RawTrackingLogSchema = SchemaFactory.createForClass(RawTrackingLog)
 
 // Index for efficient querying by site/session
 RawTrackingLogSchema.index({ siteId: 1, timestamp: -1 });
-RawTrackingLogSchema.index({ sessionId: 1 });

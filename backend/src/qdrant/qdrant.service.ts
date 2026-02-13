@@ -79,6 +79,20 @@ export class QdrantService implements OnModuleInit {
         }
     }
 
+    async scroll(filter: any, limit = 100) {
+        try {
+            const result = await this.client.scroll(this.collectionName, {
+                filter,
+                limit,
+                with_payload: true,
+            });
+            return result.points;
+        } catch (error) {
+            this.logger.error('Error scrolling Qdrant', error);
+            throw error;
+        }
+    }
+
     async deletePoints(filter: any) {
         try {
             this.logger.log(`Deleting points with filter: ${JSON.stringify(filter)}`);
