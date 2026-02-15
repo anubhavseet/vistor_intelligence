@@ -329,7 +329,7 @@ export default function BehaviorAnalytics({ siteId }: BehaviorAnalyticsProps) {
 
           <VisualAnalytics
             siteId={siteId}
-            url={selectedVisualUrl || analytics?.topPages[0]?.url}
+            initialUrl={selectedVisualUrl || analytics?.topPages[0]?.url}
           />
         </div>
       )}
