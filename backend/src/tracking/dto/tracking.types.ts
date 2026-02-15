@@ -71,7 +71,7 @@ export class VisitorSessionType {
     @Field({ nullable: true })
     referrer?: string;
 
-    @Field(() => Int, { defaultValue: 0 })
+    @Field(() => Number, { defaultValue: 0 })
     totalTimeSpent: number;
 
     @Field({ nullable: true })
