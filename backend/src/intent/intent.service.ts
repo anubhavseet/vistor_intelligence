@@ -14,7 +14,7 @@ export interface SignalBatch {
   copy_text: string[];
   text_selections?: string[]; // New
   dead_clicks?: any[]; // New
-  events: { type: string; timestamp: number }[];
+  events: { type: string; timestamp: number; payload?: any }[]; // Added payload
   interactions?: Record<string, { clicks: number; hovers: number; inputs: number; last_timestamp: number }>;
   forms?: Record<string, { time_focused: number; refills: number }>;
   performance?: { lcp?: number; cls?: number; fid?: number };

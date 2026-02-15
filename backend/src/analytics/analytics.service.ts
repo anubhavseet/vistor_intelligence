@@ -3,7 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
-import { AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat, PageSection, SectionMetric } from './dto/analytics.types';
+import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schema';
+import { AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat, PageSection, SectionMetric, TopInteraction, CustomEventStat } from './dto/analytics.types';
 import { QdrantService } from '../qdrant/qdrant.service';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class AnalyticsService {
     private visitorSessionModel: Model<VisitorSessionDocument>,
     @InjectModel(RawTrackingLog.name)
     private rawTrackingLogModel: Model<RawTrackingLogDocument>,
+    @InjectModel(PageEvent.name)
+    private pageEventModel: Model<PageEventDocument>,
     private qdrantService: QdrantService,
   ) { }
 
@@ -85,7 +88,8 @@ export class AnalyticsService {
     // 4. Top Pages
     const pagesPipeline = [
       matchStage,
-      { $unwind: '$pagesVisited' },
+      { $unwind: { path: '$pagesVisited', preserveNullAndEmptyArrays: false } },
+      { $match: { pagesVisited: { $exists: true, $ne: '' } } },
       {
         $group: {
           _id: '$pagesVisited',
@@ -151,6 +155,8 @@ export class AnalyticsService {
       pagePerformance: await this.getPagePerformance(siteId, days),
       userFlows: await this.getUserFlows(siteId, days),
       behavioralPatterns: await this.getBehavioralPatterns(siteId, days),
+      topInteractions: await this.getTopInteractions(siteId, days),
+      customEvents: await this.getCustomEvents(siteId, days),
     };
   }
 
@@ -167,13 +173,24 @@ export class AnalyticsService {
         }
       },
       {
+        $addFields: {
+          computedDwellTime: {
+            $sum: {
+              $map: {
+                input: { $objectToArray: { $ifNull: ['$raw_signals.dwell_time', {}] } },
+                as: 'item',
+                in: { $cond: [{ $isNumber: '$$item.v' }, '$$item.v', 0] }
+              }
+            }
+          }
+        }
+      },
+      {
         $group: {
           _id: '$raw_signals.url',
           avgScrollDepth: { $avg: '$raw_signals.scroll_depth' },
           avgTimeOnPage: {
-            $avg: {
-              $divide: [{ $ifNull: ['$raw_signals.dwell_time.total', 0] }, 1000]
-            }
+            $avg: { $divide: ['$computedDwellTime', 1000] }
           },
           rageClicks: { $sum: '$raw_signals.rage_clicks' }
         }
@@ -186,8 +203,8 @@ export class AnalyticsService {
           rageClicks: 1
         }
       },
-      { $sort: { avgTimeOnPage: -1 } },
-      { $limit: 10 }
+      { $sort: { avgTimeOnPage: -1, url: 1 } },
+      { $limit: 100 }
     ];
 
     return this.rawTrackingLogModel.aggregate(pipeline);
@@ -292,6 +309,71 @@ export class AnalyticsService {
     ];
   }
 
+  async getTopInteractions(siteId: string, days: number): Promise<TopInteraction[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const result = await this.pageEventModel.aggregate([
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          eventType: 'click',
+          'metadata.selector': { $exists: true }
+        }
+      },
+      {
+        $group: {
+          _id: { selector: '$metadata.selector', url: '$pageUrl' },
+          count: { $sum: { $ifNull: ['$metadata.count', 1] } }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      {
+        $project: {
+          selector: '$_id.selector',
+          pageUrl: '$_id.url',
+          count: 1,
+          _id: 0
+        }
+      }
+    ]);
+    return result;
+  }
+
+  async getCustomEvents(siteId: string, days: number): Promise<CustomEventStat[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const result = await this.pageEventModel.aggregate([
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          eventType: { $nin: ['view', 'scroll', 'click', 'session_start', 'session_end'] }
+        }
+      },
+      {
+        $group: {
+          _id: '$eventType',
+          count: { $sum: 1 },
+          recentSessions: { $addToSet: '$sessionId' }
+        }
+      },
+      {
+        $project: {
+          eventName: '$_id',
+          count: 1,
+          recentSessions: { $slice: ['$recentSessions', 5] },
+          _id: 0
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+    return result;
+  }
+
   async getPageSections(siteId: string, url: string): Promise<PageSection[]> {
     try {
       let points = await this.qdrantService.scroll(
@@ -373,8 +455,35 @@ export class AnalyticsService {
       metrics.push({
         selector,
         avgDwellTime: parseFloat((stat.totalTime / stat.visits / 1000).toFixed(2)),
-        clickCount: 0 // Placeholder, requires click tracking per element in future
+        clickCount: 0
       });
+    });
+
+    // Populate click counts from PageEvents
+    const interactionStats = await this.pageEventModel.aggregate([
+      {
+        $match: {
+          siteId,
+          timestamp: { $gte: startDate },
+          eventType: 'click',
+          'metadata.selector': { $in: Array.from(sectionStats.keys()) }
+        }
+      },
+      {
+        $group: {
+          _id: '$metadata.selector',
+          count: { $sum: { $ifNull: ['$metadata.count', 1] } }
+        }
+      }
+    ]);
+
+    const clickMap = new Map<string, number>();
+    interactionStats.forEach((stat: any) => {
+      clickMap.set(stat._id, stat.count);
+    });
+
+    metrics.forEach(m => {
+      m.clickCount = clickMap.get(m.selector) || 0;
     });
 
     return metrics.sort((a, b) => b.avgDwellTime - a.avgDwellTime);

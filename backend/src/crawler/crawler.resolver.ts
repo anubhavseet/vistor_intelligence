@@ -145,4 +145,11 @@ export class CrawlerResolver {
     ): Promise<boolean> {
         return this.crawlerService.deleteCrawlJob(jobId);
     }
+
+    @Query(() => [String])
+    async getCrawledPages(
+        @Args('siteId') siteId: string,
+    ): Promise<string[]> {
+        return this.crawlerService.getCrawledPages(siteId);
+    }
 }

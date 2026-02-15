@@ -11,7 +11,8 @@ import {
     Smartphone,
     Monitor,
     Shield,
-    Link as LinkIcon
+    Link as LinkIcon,
+    ExternalLink
 } from "lucide-react";
 import { gql } from "@apollo/client";
 import { useQuery } from "@apollo/client/react";
@@ -32,15 +33,18 @@ const GET_LIVE_SESSIONS = gql`
       referrer
       userAgent
       organizationName
-      geo {
-        country
-        city
-        region
-      }
-      flags {
-        isMobile
-        isVPN
-      }
+        geo {
+            country
+            city
+            region
+        }
+        deviceType
+        browser
+        os
+        flags {
+            isMobile
+            isVPN
+        }
     }
   }
 `;
@@ -181,7 +185,7 @@ function SessionCard({ session, onClick }: { session: any, onClick: () => void }
                 <div className="flex items-center gap-2 text-muted-foreground">
                     <Globe className="w-3.5 h-3.5" />
                     <span className="truncate">
-                        {session.geo?.city ? `${session.geo.city}, ${session.geo.country}` : (session.geo?.country || "Unknown Location")}
+                        {session.geo?.city ? `${session.geo.city}, ${session.geo.region ? session.geo.region + ', ' : ''}${session.geo.country}` : (session.geo?.country || "Unknown Location")}
                     </span>
                 </div>
 
@@ -204,7 +208,21 @@ function SessionCard({ session, onClick }: { session: any, onClick: () => void }
     );
 }
 
+// ... (previous imports)
+
+// ... (previous SessionCard component stays the same) ...
+
 function SessionDetailPanel({ session, onClose }: { session: any, onClose: () => void }) {
+    // Helper to get device icon
+    const getDeviceIcon = (type: string) => {
+        switch ((type || '').toLowerCase()) {
+            case 'mobile': return <Smartphone className="w-4 h-4" />;
+            case 'tablet': return <Monitor className="w-4 h-4 rotate-90" />; // Placeholder for tablet
+            case 'desktop': return <Monitor className="w-4 h-4" />;
+            default: return <Monitor className="w-4 h-4" />;
+        }
+    };
+
     return (
         <div className="h-full flex flex-col bg-background text-foreground">
             {/* Header */}
@@ -229,77 +247,87 @@ function SessionDetailPanel({ session, onClose }: { session: any, onClose: () =>
             <div className="flex-1 overflow-y-auto p-6 space-y-8">
                 {/* Score Section */}
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-card border rounded-xl text-center">
+                    <div className="p-4 bg-card border rounded-xl text-center shadow-sm">
                         <div className="text-sm text-muted-foreground mb-1 uppercase tracking-wider font-semibold">Intent Score</div>
                         <div className="text-4xl font-bold text-primary">{session.intentScore}</div>
                         <div className="text-xs text-muted-foreground mt-1">Based on signals</div>
                     </div>
-                    <div className="p-4 bg-card border rounded-xl text-center">
+                    <div className="p-4 bg-card border rounded-xl text-center shadow-sm">
                         <div className="text-sm text-muted-foreground mb-1 uppercase tracking-wider font-semibold">Classification</div>
                         <div className="text-xl font-bold mt-1">{session.intentCategory}</div>
                     </div>
                 </div>
 
-                {/* Info List */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Activity className="w-4 h-4" />
-                        Activity
+                {/* Identity & Tech */}
+                <div className="rounded-xl border bg-card/50 p-4 shadow-sm">
+                    <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                        <Shield className="w-4 h-4 text-primary" />
+                        Identity & Tech
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg">
-                            <span className="text-muted-foreground text-xs mb-1">Started At</span>
-                            <span className="font-medium">{new Date(session.startedAt).toLocaleString()}</span>
+                    <div className="space-y-3 text-sm">
+                        <div className="flex justify-between items-center py-2 border-b border-border/50">
+                            <span className="text-muted-foreground flex items-center gap-2">
+                                <Globe className="w-4 h-4" /> Location
+                            </span>
+                            <span className="font-medium text-right">
+                                {session.geo?.city ? `${session.geo.city}, ${session.geo.region ? session.geo.region + ', ' : ''}${session.geo.country}` : session.geo?.country || "Unknown"}
+                            </span>
                         </div>
-                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg">
-                            <span className="text-muted-foreground text-xs mb-1">Duration</span>
-                            <span className="font-medium">{Math.floor(session.totalTimeSpent / 60)}m {session.totalTimeSpent % 60}s</span>
+                        <div className="flex justify-between items-center py-2 border-b border-border/50">
+                            <span className="text-muted-foreground flex items-center gap-2">
+                                {getDeviceIcon(session.deviceType)} Device
+                            </span>
+                            <span className="font-medium text-right">
+                                {session.deviceType || 'Unknown'} <span className="text-muted-foreground">({session.os || 'Unknown OS'})</span>
+                            </span>
                         </div>
-                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg">
-                            <span className="text-muted-foreground text-xs mb-1">Page Views</span>
-                            <span className="font-medium">{session.totalPageViews}</span>
+                        <div className="flex justify-between items-center py-2 border-b border-border/50">
+                            <span className="text-muted-foreground flex items-center gap-2">
+                                <Globe className="w-4 h-4" /> Browser
+                            </span>
+                            <span className="font-medium text-right">
+                                {session.browser || 'Unknown'}
+                            </span>
                         </div>
-                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg">
-                            <span className="text-muted-foreground text-xs mb-1">Last Active</span>
-                            <span className="font-medium">{new Date(session.lastActivityAt).toLocaleTimeString()}</span>
+                        <div className="flex justify-between items-center py-2 border-b border-border/50">
+                            <span className="text-muted-foreground flex items-center gap-2">
+                                <Activity className="w-4 h-4" /> Organization
+                            </span>
+                            <span className="font-medium text-right">{session.organizationName || "Unknown"}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-2">
+                            <span className="text-muted-foreground flex items-center gap-2">
+                                <LinkIcon className="w-4 h-4" /> Referrer
+                            </span>
+                            <span className="font-medium truncate max-w-[200px] text-right" title={session.referrer}>
+                                {session.referrer || "Direct / None"}
+                            </span>
                         </div>
                     </div>
                 </div>
 
+                {/* Activity Stats */}
                 <div className="space-y-4">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Shield className="w-4 h-4" />
-                        Identity & Tech
+                        <Activity className="w-4 h-4 text-primary" />
+                        Activity Stats
                     </h3>
-                    <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center py-2 border-b">
-                            <span className="text-muted-foreground flex items-center gap-2">
-                                <Globe className="w-4 h-4" /> Location
-                            </span>
-                            <span className="font-medium">
-                                {session.geo?.city ? `${session.geo.city}, ${session.geo.country}` : session.geo?.country || "Unknown"}
-                            </span>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg border border-border/50">
+                            <span className="text-muted-foreground text-xs mb-1">Started At</span>
+                            <span className="font-medium">{new Date(session.startedAt).toLocaleString()}</span>
                         </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                            <span className="text-muted-foreground flex items-center gap-2">
-                                {session.flags?.isMobile ? <Smartphone className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
-                                Device Type
-                            </span>
-                            <span className="font-medium">
-                                {session.flags?.isMobile ? "Mobile" : "Desktop"}
-                            </span>
+                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg border border-border/50">
+                            <span className="text-muted-foreground text-xs mb-1">Duration</span>
+                            <span className="font-medium">{Math.floor(session.totalTimeSpent / 60)}m {Math.floor(session.totalTimeSpent % 60)}s</span>
                         </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                            <span className="text-muted-foreground flex items-center gap-2">
-                                <LinkIcon className="w-4 h-4" /> Referrer
-                            </span>
-                            <span className="font-medium truncate max-w-[200px]" title={session.referrer}>
-                                {session.referrer || "Direct / None"}
-                            </span>
+                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg border border-border/50">
+                            <span className="text-muted-foreground text-xs mb-1">Page Views</span>
+                            <span className="font-medium">{session.totalPageViews}</span>
                         </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                            <span className="text-muted-foreground">Organization</span>
-                            <span className="font-medium">{session.organizationName || "Unknown"}</span>
+                        <div className="flex flex-col p-3 bg-muted/30 rounded-lg border border-border/50">
+                            <span className="text-muted-foreground text-xs mb-1">Last Active</span>
+                            <span className="font-medium">{new Date(session.lastActivityAt).toLocaleTimeString()}</span>
                         </div>
                     </div>
                 </div>
@@ -307,17 +335,34 @@ function SessionDetailPanel({ session, onClose }: { session: any, onClose: () =>
                 {/* Journey Timeline */}
                 <div className="space-y-4">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <MousePointer2 className="w-4 h-4" />
+                        <MousePointer2 className="w-4 h-4 text-primary" />
                         Page Journey
                     </h3>
-                    <div className="relative border-l-2 border-muted ml-2 space-y-6 pl-6 pb-2">
+                    <div className="relative border-l-2 border-muted ml-3 pl-8 pb-4 space-y-8">
                         {session.pagesVisited.map((page: string, i: number) => (
-                            <div key={i} className="relative">
-                                <div className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-primary ring-4 ring-background" />
-                                <div className="text-sm font-medium break-all">{page}</div>
-                                <div className="text-xs text-muted-foreground mt-0.5">Step {i + 1}</div>
+                            <div key={i} className="relative group">
+                                <span className={cn(
+                                    "absolute -left-[41px] top-0 flex h-6 w-6 items-center justify-center rounded-full border bg-background text-[10px] font-medium transition-colors",
+                                    i === 0 ? "border-primary text-primary" : "text-muted-foreground"
+                                )}>
+                                    {i + 1}
+                                </span>
+                                <div className="flex flex-col gap-1">
+                                    <div className="text-sm font-medium break-all text-foreground hover:text-primary transition-colors">
+                                        <a href={page} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:underline">
+                                            {page.replace(/^https?:\/\/[^/]+/, '') || '/'}
+                                            <ExternalLink className="w-3 h-3 opacity-50" />
+                                        </a>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground font-mono truncate" title={page}>
+                                        {page}
+                                    </div>
+                                </div>
                             </div>
                         ))}
+                        {session.pagesVisited.length === 0 && (
+                            <div className="text-sm text-muted-foreground italic">No pages recorded yet.</div>
+                        )}
                     </div>
                 </div>
             </div>

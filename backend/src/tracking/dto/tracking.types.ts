@@ -77,6 +77,15 @@ export class VisitorSessionType {
     @Field({ nullable: true })
     userAgent?: string;
 
+    @Field({ nullable: true })
+    deviceType?: string;
+
+    @Field({ nullable: true })
+    browser?: string;
+
+    @Field({ nullable: true })
+    os?: string;
+
     @Field(() => SessionFlags, { nullable: true })
     flags?: SessionFlags;
 }

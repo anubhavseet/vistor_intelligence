@@ -55,10 +55,19 @@ export class VisitorSession {
   endedAt?: Date;
 
   @Prop({ type: [String], default: [] })
-  pagesVisited: string[]; // Array of page URLs
+  pagesVisited: string[]; // Array of unique page URLs visited
 
   @Prop({ default: 0 })
   totalPageViews: number;
+
+  @Prop()
+  deviceType?: string; // Desktop, Mobile, Tablet
+
+  @Prop()
+  browser?: string;
+
+  @Prop()
+  os?: string;
 
   @Prop({ default: 0 })
   totalTimeSpent: number; // Total time in seconds

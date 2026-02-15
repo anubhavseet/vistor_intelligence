@@ -55,6 +55,7 @@ export default function SiteAnalyticsPage() {
     const analytics = (data as any)?.getAnalyticsDashboard;
     const site = (data as any)?.getSite;
 
+
     // Format daily stats for chart
     const chartData = analytics?.dailyStats.map((d: any) => ({
         ...d,
@@ -141,68 +142,13 @@ export default function SiteAnalyticsPage() {
                     pagePerformance={analytics?.pagePerformance}
                     userFlows={analytics?.userFlows}
                     behavioralPatterns={analytics?.behavioralPatterns}
+                    topInteractions={analytics?.topInteractions}
+                    customEvents={analytics?.customEvents}
                 />
             )}
 
             {activeTab === 'visual' && (
-                <div className="space-y-6">
-                    <div className="flex flex-col gap-4">
-                        <div className="flex items-center gap-4 bg-muted/30 p-4 rounded-lg border border-border">
-                            <div className="flex-1">
-                                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                                    Analyze Any Page URL
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="https://example.com/page"
-                                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                const val = e.currentTarget.value;
-                                                if (val) setSelectedVisualUrl(val);
-                                            }
-                                        }}
-                                    />
-                                    <button
-                                        className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 py-2"
-                                        onClick={(e) => {
-                                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                            if (input.value) setSelectedVisualUrl(input.value);
-                                        }}
-                                    >
-                                        Visualize
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {analytics?.topPages?.length > 0 ? (
-                            <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                                {analytics.topPages.map((page: any) => (
-                                    <button
-                                        key={page.url}
-                                        onClick={() => setSelectedVisualUrl(page.url)}
-                                        className={cn(
-                                            "px-4 py-2 rounded-lg border text-sm whitespace-nowrap transition-colors",
-                                            selectedVisualUrl === page.url
-                                                ? "bg-primary/10 border-primary text-primary font-medium"
-                                                : "bg-white border-gray-200 hover:bg-gray-50 text-gray-700"
-                                        )}
-                                    >
-                                        {page.url.replace(/^https?:\/\/[^/]+/, '') || '/'}
-                                    </button>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-sm text-muted-foreground italic px-1">
-                                No recently visited pages found. Enter a URL above to visualize crawled content.
-                            </div>
-                        )}
-                    </div>
-
-                    <VisualAnalytics siteId={siteId || ''} url={selectedVisualUrl || analytics?.topPages[0]?.url} />
-                </div>
+                <VisualAnalytics siteId={siteId || ''} initialUrl={selectedVisualUrl} />
             )}
 
             {activeTab === 'overview' && (
@@ -373,6 +319,16 @@ export default function SiteAnalyticsPage() {
                                                     <a href={page.url} target="_blank" rel="noreferrer" className="hover:underline hover:text-primary">
                                                         {page.url.replace(/https?:\/\/[^\/]+/, '') || '/'}
                                                     </a>
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedVisualUrl(page.url);
+                                                            setActiveTab('visual');
+                                                        }}
+                                                        className="ml-2 inline-flex items-center text-xs text-muted-foreground hover:text-primary p-1 bg-muted/50 rounded"
+                                                        title="View Visual Analytics"
+                                                    >
+                                                        <Eye size={12} className="mr-1" /> Visuals
+                                                    </button>
                                                 </td>
                                                 <td className="py-3 text-right">{page.views}</td>
                                                 <td className="py-3 text-right">{page.visitors}</td>
@@ -391,6 +347,7 @@ export default function SiteAnalyticsPage() {
         </div>
     );
 }
+
 
 function OverviewCard({ title, value, icon: Icon, trend, inverseTrend, color }: any) {
     return (

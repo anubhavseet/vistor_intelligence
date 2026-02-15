@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2, Zap, AlertCircle } from 'lucide-react'
 import { useCrawler } from '@/hooks/use-crawler'
 import { cn } from '@/lib/utils'
@@ -8,16 +8,24 @@ interface AddWebsiteModalProps {
     onClose: () => void
     siteId: string
     onSuccess: () => void
+    initialUrl?: string
 }
 
 // NOTE: This component is actually "Start Crawl Modal"
-export default function AddWebsiteModal({ isOpen, onClose, siteId, onSuccess }: AddWebsiteModalProps) {
-    const [url, setUrl] = useState('')
+export default function AddWebsiteModal({ isOpen, onClose, siteId, onSuccess, initialUrl }: AddWebsiteModalProps) {
+    const [url, setUrl] = useState(initialUrl || '')
     const [maxPages, setMaxPages] = useState(50)
     const [maxDepth, setMaxDepth] = useState(3)
     const [sameDomainOnly, setSameDomainOnly] = useState(true)
 
     const { startCrawl, starting: loading, error } = useCrawler(siteId)
+
+    // Reset/Pre-fill URL when modal opens or initialUrl changes
+    useEffect(() => {
+        if (isOpen && initialUrl) {
+            setUrl(initialUrl)
+        }
+    }, [isOpen, initialUrl])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()

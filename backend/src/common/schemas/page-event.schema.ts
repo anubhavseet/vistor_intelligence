@@ -21,29 +21,13 @@ export class PageEvent {
   pageUrl: string; // Full URL of the page
 
   @Prop({ required: true, index: true })
-  eventType: 'view' | 'scroll' | 'click' | 'exit' | 'time';
+  eventType: string;
 
   @Prop({ required: true, index: true })
   timestamp: Date;
 
-  @Prop({
-    type: {
-      scrollDepth: Number,
-      timeOnPage: Number,
-      elementType: String, // 'button', 'link', 'form', etc.
-      elementId: String, // Non-PII element identifier
-      clickX: Number, // Relative X position (0-100)
-      clickY: Number, // Relative Y position (0-100)
-    },
-  })
-  metadata?: {
-    scrollDepth?: number;
-    timeOnPage?: number;
-    elementType?: string;
-    elementId?: string;
-    clickX?: number;
-    clickY?: number;
-  };
+  @Prop({ type: Object })
+  metadata?: any;
 
   // Data retention: auto-delete after 90 days
   @Prop({ default: () => new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) })

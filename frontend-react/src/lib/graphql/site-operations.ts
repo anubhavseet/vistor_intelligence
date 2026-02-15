@@ -137,6 +137,12 @@ export const REGENERATE_API_KEY = gql`
   }
 `
 
+export const GET_CRAWLED_PAGES = gql`
+  query GetCrawledPages($siteId: String!) {
+    getCrawledPages(siteId: $siteId)
+  }
+`
+
 // ============================================
 // TYPESCRIPT TYPES
 // ============================================

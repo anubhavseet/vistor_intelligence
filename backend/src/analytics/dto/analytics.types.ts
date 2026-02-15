@@ -100,6 +100,12 @@ export class AnalyticsDashboardData {
 
     @Field(() => [BehavioralPatternStat], { nullable: true })
     behavioralPatterns?: BehavioralPatternStat[];
+
+    @Field(() => [TopInteraction], { nullable: true })
+    topInteractions?: TopInteraction[];
+
+    @Field(() => [CustomEventStat], { nullable: true })
+    customEvents?: CustomEventStat[];
 }
 
 @ObjectType()
@@ -139,6 +145,30 @@ export class BehavioralPatternStat {
 
     @Field(() => [String])
     sessionIds: string[]; // Sample sessions
+}
+
+@ObjectType()
+export class TopInteraction {
+    @Field()
+    selector: string;
+
+    @Field()
+    pageUrl: string;
+
+    @Field(() => Int)
+    count: number;
+}
+
+@ObjectType()
+export class CustomEventStat {
+    @Field()
+    eventName: string;
+
+    @Field(() => Int)
+    count: number;
+
+    @Field(() => [String]) // last 5 session IDs
+    recentSessions: string[];
 }
 
 @ObjectType()

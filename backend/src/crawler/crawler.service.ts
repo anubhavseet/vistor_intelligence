@@ -198,4 +198,21 @@ export class CrawlerService {
         this.logger.log(`Deleted crawl job ${jobId} and associated entries`);
         return true;
     }
+    async getCrawledPages(siteId: string): Promise<string[]> {
+        const points = await this.qdrantService.scroll({
+            must: [
+                { key: "siteId", match: { value: siteId } }
+            ]
+        }, 100);
+
+        // Extract unique URLs
+        const urls = new Set<string>();
+        points.forEach(p => {
+            if (p.payload?.url) {
+                urls.add(p.payload.url as string);
+            }
+        });
+
+        return Array.from(urls);
+    }
 }

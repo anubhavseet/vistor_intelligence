@@ -197,6 +197,11 @@ export default function CrawlingPage() {
                     isOpen={showAddModal}
                     onClose={() => setShowAddModal(false)}
                     siteId={selectedSite}
+                    initialUrl={(() => {
+                        const site = sites.find((s: any) => s.siteId === selectedSite);
+                        if (!site?.domain) return '';
+                        return site.domain.startsWith('http') ? site.domain : `https://${site.domain}`;
+                    })()}
                     onSuccess={() => {
                         refetch()
                     }}

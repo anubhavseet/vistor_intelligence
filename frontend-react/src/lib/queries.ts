@@ -48,11 +48,22 @@ export const GET_ANALYTICS = gql`
                 count
                 sessionIds
             }
+            topInteractions {
+                selector
+                pageUrl
+                count
+            }
+            customEvents {
+                eventName
+                count
+                recentSessions
+            }
         }
         getSite(siteId: $siteId) {
             id
             name
             domain
         }
+        getCrawledPages(siteId: $siteId)
     }
 `;

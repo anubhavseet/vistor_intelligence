@@ -10,6 +10,7 @@ import { SitesService } from '../sites/sites.service';
 import { IntentService, SignalBatch } from '../intent/intent.service';
 
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
+import { parseUserAgent } from '../common/utils/user-agent.util';
 
 /**
  * Tracking Service
@@ -59,16 +60,23 @@ export class TrackingService {
 
     if (!session) {
       const ipHash = hashIP(data.ipAddress || '0.0.0.0');
+      const uaInfo = parseUserAgent(data.userAgent || '');
+
       session = await this.visitorSessionModel.create({
         sessionId: data.sessionId,
         siteId,
         ipHash,
         userAgent: data.userAgent,
+        deviceType: uaInfo.deviceType,
+        browser: uaInfo.browser,
+        os: uaInfo.os,
         startedAt: new Date(),
         isActive: true,
         lastActivityAt: new Date(),
         intentScore: 40, // Start as Researcher/Scanner baseline
-        intentCategory: 'Bouncer'
+        intentCategory: 'Bouncer',
+        totalPageViews: 0,
+        pagesVisited: []
       });
 
       // Queue enrichment job
@@ -77,8 +85,6 @@ export class TrackingService {
         ipAddress: data.ipAddress,
       });
     }
-
-
 
     // Raw Data Retention (Data Lake)
     try {
@@ -104,7 +110,99 @@ export class TrackingService {
     session.intentCategory = intentResult.category;
     session.lastActivityAt = new Date();
 
+    // Update Pages Visited & Page Views
+    if (data.signals.url) {
+      if (!session.pagesVisited.includes(data.signals.url)) {
+        session.pagesVisited.push(data.signals.url);
+        // Only increment if it's a new page in this session
+        // (If strictly tracking views, check for page_view event below)
+      }
+    }
+
+    // Check for explicit page_view events to increment count
+    if (data.signals.events && data.signals.events.some(e => e.type === 'page_view')) {
+      session.totalPageViews = (session.totalPageViews || 0) + 1;
+    } else if (session.totalPageViews === 0 && data.signals.url) {
+      // Fallback for initial/legacy sessions
+      session.totalPageViews = 1;
+    }
+
+    // Update Session Metrics (Time & Scroll)
+    const batchDwellTime = Object.values(data.signals.dwell_time || {}).reduce((a, b) => a + (b as number), 0);
+    session.totalTimeSpent = (session.totalTimeSpent || 0) + (batchDwellTime / 1000); // Convert ms to s
+
+    if (data.signals.scroll_depth) {
+      session.maxScrollDepth = Math.max(session.maxScrollDepth || 0, data.signals.scroll_depth);
+    }
+
+    // Update referrer if not set
+    if (!session.referrer && data.signals.referrer) {
+      session.referrer = data.signals.referrer;
+    }
+
+    // Parse UTM Parameters if not set
+    if (data.signals.url && (!session.utmParams || session.utmParams.length === 0)) {
+      try {
+        const urlObj = new URL(data.signals.url.startsWith('http') ? data.signals.url : `http://${data.signals.url}`);
+        const params: string[] = [];
+        urlObj.searchParams.forEach((value, key) => {
+          if (key.startsWith('utm_')) {
+            params.push(`${key}=${value}`);
+          }
+        });
+        if (params.length > 0) {
+          session.utmParams = params;
+        }
+      } catch (e) {
+        // ignore invalid URL
+      }
+    }
+
     await session.save();
+
+    // 5. Populate PageEvents
+    const eventsToSave = [];
+
+    // Custom Events
+    if (data.signals.events) {
+      for (const evt of data.signals.events) {
+        eventsToSave.push({
+          sessionId: data.sessionId,
+          siteId,
+          pageUrl: data.signals.url || '',
+          eventType: evt.type,
+          timestamp: new Date(evt.timestamp || Date.now()),
+          metadata: (evt as any).payload || {}
+        });
+      }
+    }
+
+    // Top Interactions (Clicks)
+    if (data.signals.interactions) {
+      for (const [selector, interaction] of Object.entries(data.signals.interactions)) {
+        if (interaction.clicks > 0) {
+          eventsToSave.push({
+            sessionId: data.sessionId,
+            siteId,
+            pageUrl: data.signals.url || '',
+            eventType: 'click', // Standardized click event
+            timestamp: new Date(interaction.last_timestamp || Date.now()),
+            metadata: {
+              selector,
+              count: interaction.clicks
+            }
+          });
+        }
+      }
+    }
+
+    if (eventsToSave.length > 0) {
+      try {
+        await this.pageEventModel.insertMany(eventsToSave);
+      } catch (e) {
+        this.logger.error(`Failed to save page events for session ${data.sessionId}`, e);
+      }
+    }
 
     // 5. Return Action & AI Payload
     return {
