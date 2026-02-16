@@ -70,6 +70,36 @@ export class HeatMapPoint {
 
     @Field(() => Float, { nullable: true })
     avgIntent?: number;
+
+    @Field({ nullable: true })
+    referrer?: string;
+
+    @Field({ nullable: true })
+    startedAt?: string;
+
+    @Field({ nullable: true })
+    city?: string;
+
+    @Field({ nullable: true })
+    country?: string;
+
+    @Field(() => [String], { nullable: true })
+    pagesVisited?: string[];
+
+    @Field({ nullable: true })
+    deviceType?: string;
+
+    @Field({ nullable: true })
+    os?: string;
+
+    @Field({ nullable: true })
+    browser?: string;
+
+    @Field(() => Float, { nullable: true })
+    duration?: number;
+
+    @Field({ nullable: true })
+    org?: string;
 }
 
 @ObjectType()
@@ -106,6 +136,9 @@ export class AnalyticsDashboardData {
 
     @Field(() => [CustomEventStat], { nullable: true })
     customEvents?: CustomEventStat[];
+
+    @Field(() => [CityStat], { nullable: true })
+    cityStats?: CityStat[];
 }
 
 @ObjectType()
@@ -193,4 +226,34 @@ export class SectionMetric {
 
     @Field(() => Int)
     clickCount: number;
+}
+
+@ObjectType()
+export class CityStat {
+    @Field()
+    city: string;
+
+    @Field()
+    country: string;
+
+    @Field(() => Int)
+    count: number;
+
+    @Field(() => Float)
+    lat: number;
+
+    @Field(() => Float)
+    lng: number;
+}
+
+@ObjectType()
+export class AreaStats {
+    @Field(() => Int)
+    visitorCount: number;
+
+    @Field(() => Float)
+    avgIntentScore: number;
+
+    @Field(() => [String])
+    topPages: string[];
 }

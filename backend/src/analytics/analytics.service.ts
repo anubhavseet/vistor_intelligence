@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
 import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schema';
-import { AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat, PageSection, SectionMetric, TopInteraction, CustomEventStat } from './dto/analytics.types';
+import { AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat, PageSection, SectionMetric, TopInteraction, CustomEventStat, CityStat, AreaStats } from './dto/analytics.types';
 import { QdrantService } from '../qdrant/qdrant.service';
 
 @Injectable()
@@ -125,20 +125,48 @@ export class AnalyticsService {
     ];
     const dailyStats = await this.visitorSessionModel.aggregate(dailyPipeline as any[]);
 
-    // 6. Heatmap Points
+    // 6. Heatmap Points (Individual Points)
     const heatPipeline = [
       matchStage,
       { $match: { 'geo.lat': { $ne: null } } },
       {
-        $group: {
-          _id: { lat: { $round: ['$geo.lat', 1] }, lng: { $round: ['$geo.lng', 1] } },
-          weight: { $sum: 1 },
-          avgIntent: { $avg: '$intentScore' }
-        },
+        $project: {
+          lat: '$geo.lat',
+          lng: '$geo.lng',
+          weight: { $literal: 1 },
+          intentScore: '$intentScore',
+          referrer: { $ifNull: ['$referrer', 'Direct'] },
+          startedAt: { $dateToString: { format: "%Y-%m-%dT%H:%M:%S.%LZ", date: "$startedAt" } },
+          city: '$geo.city',
+          country: '$geo.country',
+          pagesVisited: { $ifNull: ['$pagesVisited', []] },
+          deviceType: '$deviceType',
+          os: '$os',
+          browser: '$browser',
+          duration: '$totalTimeSpent',
+          org: '$organizationName'
+        }
       },
-      { $limit: 1000 },
+      { $limit: 5000 },
     ];
     const heatPoints = await this.visitorSessionModel.aggregate(heatPipeline as any[]);
+
+    // 7. City Stats
+    const cityPipeline = [
+      matchStage,
+      { $match: { 'geo.city': { $ne: null } } },
+      {
+        $group: {
+          _id: { city: '$geo.city', country: '$geo.country' },
+          count: { $sum: 1 },
+          lat: { $first: '$geo.lat' },
+          lng: { $first: '$geo.lng' }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 50 }
+    ];
+    const cityStats = await this.visitorSessionModel.aggregate(cityPipeline as any[]);
 
     return {
       overview: {
@@ -148,7 +176,23 @@ export class AnalyticsService {
         bounceRate: parseFloat(bounceRate.toFixed(1)),
       },
       dailyStats: dailyStats.map(d => ({ date: d._id, sessions: d.sessions, pageViews: d.pageViews })),
-      heatMapPoints: heatPoints.map(h => ({ lat: h._id.lat, lng: h._id.lng, weight: h.weight, avgIntent: h.avgIntent })),
+      heatMapPoints: heatPoints.map(h => ({
+        lat: h.lat,
+        lng: h.lng,
+        weight: h.weight,
+        avgIntent: h.intentScore,
+        referrer: h.referrer,
+        startedAt: h.startedAt,
+        city: h.city,
+        country: h.country,
+        pagesVisited: h.pagesVisited.slice(0, 5),
+        deviceType: h.deviceType,
+        os: h.os,
+        browser: h.browser,
+        duration: h.duration,
+        org: h.org
+      })),
+      cityStats: cityStats.map(c => ({ city: c._id.city, country: c._id.country, count: c.count, lat: c.lat, lng: c.lng })),
       referrers: referrers.map(r => ({ source: r._id, count: r.count })),
       geoStats: geoStats.map(g => ({ country: g._id, count: g.count })),
       topPages: topPages.map(p => ({ url: p.url, views: p.views, visitors: p.visitors })),
@@ -157,6 +201,68 @@ export class AnalyticsService {
       behavioralPatterns: await this.getBehavioralPatterns(siteId, days),
       topInteractions: await this.getTopInteractions(siteId, days),
       customEvents: await this.getCustomEvents(siteId, days),
+    };
+  }
+
+  async getAreaStats(siteId: string, centerLat: number, centerLng: number, radiusKm: number, days: number): Promise<AreaStats> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // Earth radius approximation
+    const R = 6378.1;
+
+    // Use MongoDB $geoWithin if we had 2dsphere index. 
+    // Assuming we might not have it or just using basic lat/lng numbers, we can use basic math or $geoWithin if it's set up.
+    // For now, let's use a box approximation or simple distance filter if the dataset is small enough, 
+    // OR better: if we don't have indexes, aggregation with $function or $expr is slow.
+    // Ideally, we should use $geoWithin with $centerSphere.
+    // Let's assume standard lat/lng storage.
+
+    // Calculate bounding box for speed
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / (111 * Math.cos(centerLat * (Math.PI / 180)));
+
+    const pipeline = [
+      {
+        $match: {
+          siteId,
+          startedAt: { $gte: startDate },
+          'geo.lat': { $gte: centerLat - latDelta, $lte: centerLat + latDelta },
+          'geo.lng': { $gte: centerLng - lngDelta, $lte: centerLng + lngDelta }
+        }
+      },
+      // Refine with circle distance calc if needed, but box is often close enough for "circled area" UI
+      {
+        $group: {
+          _id: null,
+          visitorCount: { $sum: 1 },
+          avgIntentScore: { $avg: '$intentScore' },
+          pages: { $push: '$pagesVisited' }
+        }
+      }
+    ];
+
+    const result = await this.visitorSessionModel.aggregate(pipeline);
+
+    if (!result || result.length === 0) {
+      return { visitorCount: 0, avgIntentScore: 0, topPages: [] };
+    }
+
+    // Process top pages manually from the array of arrays
+    const pageCounts: Record<string, number> = {};
+    result[0].pages.flat().forEach((p: string) => {
+      if (p) pageCounts[p] = (pageCounts[p] || 0) + 1;
+    });
+
+    const topPages = Object.entries(pageCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([url]) => url);
+
+    return {
+      visitorCount: result[0].visitorCount,
+      avgIntentScore: result[0].avgIntentScore || 0,
+      topPages
     };
   }
 

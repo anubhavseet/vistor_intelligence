@@ -40,6 +40,18 @@ export class SessionFlags {
 }
 
 @ObjectType()
+export class DeviceFingerprintType {
+    @Field({ nullable: true })
+    renderer?: string;
+
+    @Field({ nullable: true })
+    hardwareConcurrency?: string; // GraphQL Int doesn't handle mixed types well, string is safer or use scalar
+
+    @Field({ nullable: true })
+    deviceMemory?: string;
+}
+
+@ObjectType()
 export class VisitorSessionType {
     @Field()
     sessionId: string;
@@ -99,17 +111,7 @@ export class VisitorSessionType {
     deviceFingerprint?: DeviceFingerprintType;
 }
 
-@ObjectType()
-export class DeviceFingerprintType {
-    @Field({ nullable: true })
-    renderer?: string;
 
-    @Field({ nullable: true })
-    hardwareConcurrency?: string; // GraphQL Int doesn't handle mixed types well, string is safer or use scalar
-
-    @Field({ nullable: true })
-    deviceMemory?: string;
-}
 
 @ObjectType()
 export class SiteConfigType {

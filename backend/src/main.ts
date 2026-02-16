@@ -9,18 +9,10 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   // Enable CORS
+  // Enable CORS (Permissive for Development)
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow any localhost origin, Vercel domains, ngrok, or no origin (like mobile/Postman)
-      if (!origin ||
-        origin.includes('localhost') ||
-        origin.includes('vercel.app') ||
-        origin.includes('ngrok')) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: true, // Reflects the request origin, effectively allowing all
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 

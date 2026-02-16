@@ -1,6 +1,6 @@
 import { Resolver, Query, Args } from '@nestjs/graphql';
 import { AnalyticsService } from './analytics.service';
-import { AnalyticsDashboardData, PageSection, SectionMetric } from './dto/analytics.types';
+import { AnalyticsDashboardData, PageSection, SectionMetric, AreaStats } from './dto/analytics.types';
 
 @Resolver()
 export class AnalyticsResolver {
@@ -29,5 +29,16 @@ export class AnalyticsResolver {
     @Args('days') days: number,
   ): Promise<SectionMetric[]> {
     return this.analyticsService.getSectionMetrics(siteId, url, days);
+  }
+
+  @Query(() => AreaStats)
+  async getAreaStats(
+    @Args('siteId') siteId: string,
+    @Args('centerLat') centerLat: number,
+    @Args('centerLng') centerLng: number,
+    @Args('radiusKm') radiusKm: number,
+    @Args('days') days: number,
+  ): Promise<AreaStats> {
+    return this.analyticsService.getAreaStats(siteId, centerLat, centerLng, radiusKm, days);
   }
 }
