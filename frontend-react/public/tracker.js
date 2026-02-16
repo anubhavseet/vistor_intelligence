@@ -79,7 +79,8 @@
         forms: {}, // field_name -> { time_focused: ms, refills: count }
         performance: {}, // lcp, cls, fid
         errors: [], // { msg, stack, time }
-        mouse_trace: [] // { x, y, time } (sampled)
+        mouse_trace: [], // { x, y, time } (sampled)
+        geolocation: null // { lat, lng, accuracy }
     };
 
     // Internal Logic State
@@ -441,6 +442,45 @@
     }, { passive: true });
 
 
+    // --- Geolocation ---
+    function fetchGeolocation(force = false) {
+        if (!navigator.geolocation) return;
+
+        function getPosition() {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    signals.geolocation = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    };
+                },
+                (err) => {
+                    console.warn("Tracker: Geolocation error", err.code);
+                    if (err.code === 1) { // User denied
+                        localStorage.setItem('vi_geo_permission', 'denied');
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+            );
+        }
+
+        if (force) {
+            getPosition();
+            return;
+        }
+
+        // Check permission status first to avoid prompting if not already granted/promptable
+        if (navigator.permissions) {
+            navigator.permissions.query({ name: 'geolocation' }).then(result => {
+                if (result.state === 'granted') {
+                    getPosition();
+                }
+            });
+        }
+    }
+
+
     // --- Batch Processing ---
     async function sendBatch() {
         // Finalize dwell times
@@ -481,7 +521,22 @@
             language: navigator.language,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             platform: navigator.platform,
-            connection: navigator.connection ? navigator.connection.effectiveType : 'unknown'
+            connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+            hardwareConcurrency: navigator.hardwareConcurrency || 'unknown', // CPU Cores
+            deviceMemory: navigator.deviceMemory || 'unknown', // RAM (approx) in GB
+            renderer: (function () {
+                try {
+                    const canvas = document.createElement('canvas');
+                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    if (gl) {
+                        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                        if (debugInfo) {
+                            return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                        }
+                    }
+                    return 'unknown';
+                } catch (e) { return 'unknown'; }
+            })()
         };
 
         const input = {
@@ -501,7 +556,8 @@
                 forms: JSON.stringify(signals.forms),
                 performance: JSON.stringify(signals.performance),
                 errors: JSON.stringify(signals.errors),
-                mouse_trace: JSON.stringify(signals.mouse_trace)
+                mouse_trace: JSON.stringify(signals.mouse_trace),
+                geolocation: signals.geolocation ? JSON.stringify(signals.geolocation) : null
             },
             timestamp: Date.now(),
             pageUrl: window.location.href,
@@ -539,7 +595,8 @@
             forms: {},
             performance: {},
             errors: [],
-            mouse_trace: []
+            mouse_trace: [],
+            geolocation: null
         };
         accumulatedDwell = {};
 
@@ -720,6 +777,8 @@
                 isTrackingActive = true;
                 console.log("Tracker: Tracking started.");
                 initObserver();
+                fetchGeolocation(); // Try to get location
+                askForDataPermission(); // Ask if not already decided
 
                 // Send first batch immediately or queue it? 
                 // Using interval for batches.
@@ -730,6 +789,82 @@
         } catch (error) {
             console.error("Tracker: Error during initialization", error);
         }
+    }
+
+    // --- UI: Permission Prompt ---
+    function askForDataPermission() {
+        if (localStorage.getItem('vi_geo_permission') === 'dismissed' ||
+            localStorage.getItem('vi_geo_permission') === 'granted') {
+            return;
+        }
+
+        // Delay prompt slightly to not bombard user immediately
+        setTimeout(() => {
+            const hostId = 'vi-permission-host';
+            if (document.getElementById(hostId)) return;
+
+            const host = document.createElement('div');
+            host.id = hostId;
+            host.style.cssText = "position: fixed; bottom: 20px; left: 20px; z-index: 2147483646; font-family: system-ui, -apple-system, sans-serif;";
+            const shadow = host.attachShadow({ mode: 'open' });
+
+            shadow.innerHTML = `
+                <style>
+                    .vi-prompt {
+                        background: #ffffff;
+                        border: 1px solid #e5e7eb;
+                        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                        border-radius: 8px;
+                        padding: 16px;
+                        width: 300px;
+                        font-size: 14px;
+                        color: #1f2937;
+                        animation: slideIn 0.3s ease-out;
+                    }
+                    @keyframes slideIn {
+                        from { transform: translateY(20px); opacity: 0; }
+                        to { transform: translateY(0); opacity: 1; }
+                    }
+                    .vi-title { font-weight: 600; margin-bottom: 8px; }
+                    .vi-text { margin-bottom: 12px; color: #4b5563; line-height: 1.4; }
+                    .vi-actions { display: flex; gap: 8px; justify-content: flex-end; }
+                    button {
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        font-size: 13px;
+                        font-weight: 500;
+                        cursor: pointer;
+                        border: none;
+                        transition: background 0.1s;
+                    }
+                    .vi-btn-allow { background: #2563eb; color: white; }
+                    .vi-btn-allow:hover { background: #1d4ed8; }
+                    .vi-btn-deny { background: transparent; color: #6b7280; }
+                    .vi-btn-deny:hover { background: #f3f4f6; color: #374151; }
+                </style>
+                <div class="vi-prompt">
+                    <div class="vi-title">Enable Local Experiences?</div>
+                    <div class="vi-text">Share your location to see content and offers tailored to your area.</div>
+                    <div class="vi-actions">
+                        <button class="vi-btn-deny" id="deny">Not Now</button>
+                        <button class="vi-btn-allow" id="allow">Allow Location</button>
+                    </div>
+                </div>
+            `;
+
+            shadow.getElementById('allow').onclick = () => {
+                localStorage.setItem('vi_geo_permission', 'granted');
+                host.remove();
+                fetchGeolocation(true); // Force prompt
+            };
+
+            shadow.getElementById('deny').onclick = () => {
+                localStorage.setItem('vi_geo_permission', 'dismissed');
+                host.remove();
+            };
+
+            document.body.appendChild(host);
+        }, 3000); // 3-second delay
     }
 
     if (document.readyState === 'loading') {

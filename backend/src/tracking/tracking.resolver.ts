@@ -100,7 +100,9 @@ export class TrackingResolver {
         forms: input.signals.forms ? JSON.parse(input.signals.forms) : {},
         performance: input.signals.performance ? JSON.parse(input.signals.performance) : {},
         errors: input.signals.errors ? JSON.parse(input.signals.errors) : [],
+
         mouse_trace: input.signals.mouse_trace ? JSON.parse(input.signals.mouse_trace) : [],
+        geolocation: input.signals.geolocation ? JSON.parse(input.signals.geolocation) : undefined,
         url: input.signals.url || input.pageUrl,
         referrer: input.signals.referrer || input.referrer,
       };
@@ -111,6 +113,7 @@ export class TrackingResolver {
         timestamp: input.timestamp || Date.now(),
         ipAddress,
         userAgent: input.userAgent,
+        metadata
       });
 
       return {

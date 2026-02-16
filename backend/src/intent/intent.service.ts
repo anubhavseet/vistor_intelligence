@@ -20,6 +20,7 @@ export interface SignalBatch {
   performance?: { lcp?: number; cls?: number; fid?: number };
   errors?: { msg: string; stack: string; time: number }[];
   mouse_trace?: { x: number; y: number; time: number }[];
+  geolocation?: { lat: number; lng: number; accuracy: number };
   url?: string;
   referrer?: string; // New
 }

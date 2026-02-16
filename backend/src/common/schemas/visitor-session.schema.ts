@@ -37,6 +37,8 @@ export class VisitorSession {
     lat?: number;
     lng?: number;
     timezone?: string;
+    accuracy?: number; // GPS accuracy in meters
+    source?: 'ip' | 'gps';
   };
 
   @Prop()
@@ -68,6 +70,13 @@ export class VisitorSession {
 
   @Prop()
   os?: string;
+
+  @Prop({ type: Object })
+  deviceFingerprint?: {
+    renderer?: string;
+    hardwareConcurrency?: string | number;
+    deviceMemory?: string | number;
+  };
 
   @Prop({ default: 0 })
   totalTimeSpent: number; // Total time in seconds

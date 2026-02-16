@@ -22,7 +22,7 @@ export class EnrichmentService {
   constructor(
     private configService: ConfigService,
     private httpService: HttpService,
-  ) {}
+  ) { }
 
   /**
    * Enrich IP address with geo and organization data
@@ -52,36 +52,80 @@ export class EnrichmentService {
         return cached;
       }
 
-      // Use free IP geolocation service (ip-api.com)
-      // In production, use MaxMind GeoIP2 or similar
-      const response = await firstValueFrom(
-        this.httpService.get(`http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,lat,lon,timezone,org,as,mobile,proxy,hosting`, {
-          timeout: 3000, // 3 second timeout
-        }),
-      );
+      // Check for IPINFO token
+      const ipinfoToken = this.configService.get<string>('IPINFO_TOKEN');
 
-      if (response.data.status === 'fail') {
-        this.logger.warn(`GeoIP lookup failed for ${ip}: ${response.data.message}`);
-        return null;
+      let result = null;
+
+      if (ipinfoToken) {
+        // Use ipinfo.io (High Accuracy)
+        try {
+          const response = await firstValueFrom(
+            this.httpService.get(`https://ipinfo.io/${ip}/json?token=${ipinfoToken}`, {
+              timeout: 3000
+            })
+          );
+          const data = response.data;
+          const [lat, lng] = data.loc ? data.loc.split(',').map(Number) : [0, 0];
+          console.log("Data IPInfo", data)
+          result = {
+            geo: {
+              country: data.country,
+              region: data.region,
+              city: data.city,
+              lat,
+              lng,
+              timezone: data.timezone,
+            },
+            organization: data.org, // e.g. "AS7922 Comcast Cable Communications, LLC"
+            flags: {
+              isVPN: data.privacy?.vpn || false,
+              isMobile: data.privacy?.hosting || false, // approximation
+              isDataCenter: data.privacy?.hosting || false,
+              isProxy: data.privacy?.proxy || false,
+            }
+          };
+
+          if (!result.organization && data.company && data.company.name) {
+            result.organization = data.company.name;
+          }
+
+        } catch (e) {
+          this.logger.warn(`ipinfo.io failed for ${ip}, falling back to ip-api`);
+        }
       }
 
-      const result = {
-        geo: {
-          country: response.data.country,
-          region: response.data.regionName,
-          city: response.data.city,
-          lat: response.data.lat,
-          lng: response.data.lon,
-          timezone: response.data.timezone,
-        },
-        organization: response.data.org,
-        flags: {
-          isVPN: response.data.proxy === true,
-          isMobile: response.data.mobile === true,
-          isDataCenter: response.data.hosting === true,
-          isProxy: response.data.proxy === true,
-        },
-      };
+      // Fallback to free ip-api.com if no result yet
+      if (!result) {
+        const response = await firstValueFrom(
+          this.httpService.get(`http://ip-api.com/json/${ip}?fields=status,message,country,regionName,city,lat,lon,timezone,org,as,mobile,proxy,hosting`, {
+            timeout: 3000,
+          }),
+        );
+        console.log("Data ip-api", response.data)
+        if (response.data.status === 'fail') {
+          this.logger.warn(`GeoIP lookup failed for ${ip}: ${response.data.message}`);
+          return null;
+        }
+
+        result = {
+          geo: {
+            country: response.data.country,
+            region: response.data.regionName,
+            city: response.data.city,
+            lat: response.data.lat,
+            lng: response.data.lon,
+            timezone: response.data.timezone,
+          },
+          organization: response.data.org,
+          flags: {
+            isVPN: response.data.proxy === true,
+            isMobile: response.data.mobile === true,
+            isDataCenter: response.data.hosting === true,
+            isProxy: response.data.proxy === true,
+          },
+        };
+      }
 
       // Cache for 24 hours
       this.cache.set(ip, result);
@@ -100,7 +144,7 @@ export class EnrichmentService {
    */
   extractDomain(organization?: string): string | undefined {
     if (!organization) return undefined;
-    
+
     // Try to extract domain from org string like "AS12345 Company Name"
     const match = organization.match(/([a-zA-Z0-9-]+\.[a-zA-Z]{2,})/);
     return match ? match[1] : undefined;

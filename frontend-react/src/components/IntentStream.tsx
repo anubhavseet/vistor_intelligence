@@ -37,10 +37,17 @@ const GET_LIVE_SESSIONS = gql`
             country
             city
             region
+            accuracy
+            source
         }
         deviceType
         browser
         os
+        deviceFingerprint {
+            renderer
+            hardwareConcurrency
+            deviceMemory
+        }
         flags {
             isMobile
             isVPN
@@ -271,8 +278,45 @@ function SessionDetailPanel({ session, onClose }: { session: any, onClose: () =>
                             </span>
                             <span className="font-medium text-right">
                                 {session.geo?.city ? `${session.geo.city}, ${session.geo.region ? session.geo.region + ', ' : ''}${session.geo.country}` : session.geo?.country || "Unknown"}
+                                {session.geo?.source === 'gps' && (
+                                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800 border border-green-200" title={`High Accuracy (${session.geo.accuracy}m)`}>
+                                        GPS: ±{Math.round(session.geo.accuracy)}m
+                                    </span>
+                                )}
                             </span>
                         </div>
+
+                        {/* Device Fingerprint Details */}
+                        {session.deviceFingerprint && (
+                            <div className="flex flex-col py-2 border-b border-border/50 gap-1">
+                                <span className="text-muted-foreground flex items-center gap-2 text-xs">
+                                    <Shield className="w-3 h-3" /> Hardware Fingerprint
+                                </span>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                    {session.deviceFingerprint.renderer && (
+                                        <div className="bg-muted p-1.5 rounded text-[10px] font-mono truncate" title={session.deviceFingerprint.renderer}>
+                                            <span className="opacity-50 block text-[9px]">GPU</span>
+                                            {session.deviceFingerprint.renderer}
+                                        </div>
+                                    )}
+                                    <div className="flex gap-2">
+                                        {session.deviceFingerprint.hardwareConcurrency && (
+                                            <div className="bg-muted p-1.5 rounded text-[10px] font-mono flex-1">
+                                                <span className="opacity-50 block text-[9px]">CORES</span>
+                                                {session.deviceFingerprint.hardwareConcurrency}
+                                            </div>
+                                        )}
+                                        {session.deviceFingerprint.deviceMemory && (
+                                            <div className="bg-muted p-1.5 rounded text-[10px] font-mono flex-1">
+                                                <span className="opacity-50 block text-[9px]">RAM</span>
+                                                {session.deviceFingerprint.deviceMemory}GB
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex justify-between items-center py-2 border-b border-border/50">
                             <span className="text-muted-foreground flex items-center gap-2">
                                 {getDeviceIcon(session.deviceType)} Device

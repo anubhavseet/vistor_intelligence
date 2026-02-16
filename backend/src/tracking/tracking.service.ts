@@ -43,10 +43,12 @@ export class TrackingService {
     data: {
       userId?: string;
       sessionId: string;
+
       signals: SignalBatch;
       timestamp: number;
       ipAddress?: string;
       userAgent?: string;
+      metadata?: any;
     },
   ) {
     // 1. Validate API key
@@ -57,6 +59,17 @@ export class TrackingService {
 
     // 2. Get or Create Session
     let session = await this.visitorSessionModel.findOne({ sessionId: data.sessionId, siteId });
+
+    // Validate Timezone (Proxy Detection)
+    // If browser timezone (metadata) differs from IP timezone (geo), it's likely a VPN/Proxy.
+    let isLikelyVPN = false;
+    if (data.metadata && data.metadata.timezone && session && session.geo && session.geo.timezone) {
+      // Simple string check (e.g., 'America/New_York' vs 'Asia/Kolkata')
+      // Ideally we check offsets, but string mismatch is a strong indicator of travel or VPN
+      if (data.metadata.timezone !== session.geo.timezone) {
+        isLikelyVPN = true;
+      }
+    }
 
     if (!session) {
       const ipHash = hashIP(data.ipAddress || '0.0.0.0');
@@ -70,6 +83,11 @@ export class TrackingService {
         deviceType: uaInfo.deviceType,
         browser: uaInfo.browser,
         os: uaInfo.os,
+        deviceFingerprint: data.metadata ? {
+          renderer: data.metadata.renderer,
+          hardwareConcurrency: data.metadata.hardwareConcurrency,
+          deviceMemory: data.metadata.deviceMemory
+        } : undefined,
         startedAt: new Date(),
         isActive: true,
         lastActivityAt: new Date(),
@@ -80,10 +98,24 @@ export class TrackingService {
       });
 
       // Queue enrichment job
+      // If we have high-accuracy geolocation, we can pass it or update it directly.
+      // However, enrichment also provides Org data. So we still queue it.
       await this.enrichmentQueue.add({
         sessionId: session._id.toString(),
         ipAddress: data.ipAddress,
       });
+    }
+
+    // High-Accuracy Geolocation Overwrite
+    if (data.signals.geolocation && data.signals.geolocation.lat) {
+      if (!session.geo) session.geo = {};
+      session.geo.lat = data.signals.geolocation.lat;
+      session.geo.lng = data.signals.geolocation.lng;
+      session.geo.accuracy = data.signals.geolocation.accuracy;
+      session.geo.source = 'gps';
+    } else if (!session.geo || !session.geo.lat) {
+      // Ensure source is IP if not overwritten
+      if (session.geo) session.geo.source = 'ip';
     }
 
     // Raw Data Retention (Data Lake)
@@ -138,6 +170,12 @@ export class TrackingService {
     // Update referrer if not set
     if (!session.referrer && data.signals.referrer) {
       session.referrer = data.signals.referrer;
+    }
+
+    // Update VPN Flag based on Timezone Mismatch
+    if (isLikelyVPN) {
+      if (!session.flags) session.flags = {};
+      session.flags.isVPN = true; // Flag as suspicious/VPN
     }
 
     // Parse UTM Parameters if not set

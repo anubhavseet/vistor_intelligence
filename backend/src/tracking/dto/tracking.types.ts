@@ -19,6 +19,12 @@ export class GeoType {
 
     @Field({ nullable: true })
     timezone?: string;
+
+    @Field({ nullable: true })
+    accuracy?: number;
+
+    @Field({ nullable: true })
+    source?: string;
 }
 
 @ObjectType()
@@ -88,6 +94,21 @@ export class VisitorSessionType {
 
     @Field(() => SessionFlags, { nullable: true })
     flags?: SessionFlags;
+
+    @Field(() => DeviceFingerprintType, { nullable: true })
+    deviceFingerprint?: DeviceFingerprintType;
+}
+
+@ObjectType()
+export class DeviceFingerprintType {
+    @Field({ nullable: true })
+    renderer?: string;
+
+    @Field({ nullable: true })
+    hardwareConcurrency?: string; // GraphQL Int doesn't handle mixed types well, string is safer or use scalar
+
+    @Field({ nullable: true })
+    deviceMemory?: string;
 }
 
 @ObjectType()
@@ -160,6 +181,9 @@ export class SignalBatchInput {
 
     @Field(() => String, { nullable: true, description: 'JSON string of mouse trace array' })
     mouse_trace?: string;
+
+    @Field(() => String, { nullable: true, description: 'JSON string of geolocation object' })
+    geolocation?: string;
 
     @Field({ nullable: true })
     url?: string;
