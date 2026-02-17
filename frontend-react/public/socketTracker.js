@@ -355,7 +355,14 @@
                 }
             `;
             this.client.subscribe(uiQuery, { sessionId: this.sessionId }, (data) => {
-                if (data.uiInjection) this.handleUIInjection(data.uiInjection.payload);
+                if (data && data.uiInjection && data.uiInjection.payload) {
+                    try {
+                        const payload = JSON.parse(data.uiInjection.payload);
+                        this.handleUIInjection(payload);
+                    } catch (e) {
+                        console.error('[Tracker] Failed to parse UI payload', e);
+                    }
+                }
             });
 
             // Intent Update (Optional Debug)
@@ -369,7 +376,7 @@
                     }
                 `;
                 this.client.subscribe(intentQuery, { sessionId: this.sessionId }, (data) => {
-                    console.log('[Tracker] Intent:', data.intentUpdate);
+                    if (data && data.intentUpdate) console.log('[Tracker] Intent:', data.intentUpdate);
                 });
             }
         }
@@ -451,9 +458,6 @@
             // 4. Send Batch
             const batchData = JSON.parse(JSON.stringify(this.signals));
 
-            // Attach metadata for session enrichment
-            batchData.metadata = this.getMetadata();
-
             this.trackEvent('signals_batch', batchData);
 
             // 5. Reset
@@ -463,36 +467,6 @@
             this.signals.dead_clicks = [];
             this.signals.rage_clicks = 0;
             this.signals.hesitation_event = false;
-        }
-
-        getMetadata() {
-            return {
-                screen: {
-                    width: window.screen.width,
-                    height: window.screen.height,
-                    colorDepth: window.screen.colorDepth,
-                    orientation: (screen.orientation || {}).type
-                },
-                language: navigator.language,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                platform: navigator.platform,
-                connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
-                hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
-                deviceMemory: navigator.deviceMemory || 'unknown',
-                renderer: (function () {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                        if (gl) {
-                            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-                            if (debugInfo) {
-                                return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-                            }
-                        }
-                        return 'unknown';
-                    } catch (e) { return 'unknown'; }
-                })()
-            };
         }
 
         // --- Event Listeners ---
@@ -700,7 +674,7 @@
 
             if (document.getElementById('vi-ai-host')) return; // Already showing one?
 
-            const target = document.querySelector(injection_target_selector) || document.body;
+            const targetElement = document.querySelector(injection_target_selector) || document.body;
             const host = document.createElement('div');
             host.id = 'vi-ai-host';
             host.style.cssText = "position: relative; z-index: 2147483647;"; // Max Z-Index
@@ -711,32 +685,51 @@
                 <style>
                     ${scoped_css}
                     :host { all: initial; display: block; font-family: sans-serif; }
-                    .vi-close-btn {
-                        position: absolute; top: 8px; right: 8px;
-                        width: 24px; height: 24px; background: rgba(0,0,0,0.2);
-                        color: white; border-radius: 50%; border: none;
-                        cursor: pointer; display: flex; align-items: center; justify-content: center;
-                        z-index: 1000; font-size: 16px;
+                    * { box-sizing: border-box; }
+                    .vi-internal-close {
+                        position: absolute; top: 10px; right: 10px; width: 24px; height: 24px;
+                        background: rgba(0,0,0,0.3); color: white; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center;
+                        cursor: pointer; font-size: 16px; line-height: 1; border: none;
+                        transition: background 0.2s; z-index: 100;
                     }
-                    .vi-close-btn:hover { background: rgba(0,0,0,0.5); }
+                    .vi-internal-close:hover { background: rgba(0,0,0,0.6); }
                 </style>
-                <div style="position: relative;">
-                    <button class="vi-close-btn">×</button>
+                <div style="position: relative; width: 100%; height: 100%;">
+                    <button class="vi-internal-close" title="Close">×</button>
                     ${html_payload}
                 </div>
             `;
 
             if (javascript_payload) {
                 const script = document.createElement('script');
+                // Wrap in a closure and proxy 'document' to point to shadowRoot for selectors
                 script.textContent = `
                     (function() {
                         const host = document.getElementById('vi-ai-host');
-                        if (!host) return;
+                        if (!host || !host.shadowRoot) return;
                         const shadow = host.shadowRoot;
-                        // Execute context
-                        try {
-                            ${javascript_payload}
-                        } catch(e) { console.error('AI JS Error', e); }
+                        
+                        const docProxy = new Proxy(document, {
+                            get: (target, prop) => {
+                                // Redirect selector methods to shadow root
+                                if (['getElementById', 'querySelector', 'querySelectorAll'].includes(prop)) {
+                                    return shadow[prop].bind(shadow);
+                                }
+                                // Fallback for everything else (createElement, head, body, etc.)
+                                const val = target[prop];
+                                return typeof val === 'function' ? val.bind(target) : val;
+                            }
+                        });
+
+                        // Execute payload with hijacked document
+                        (function(document) {
+                            try {
+                                ${javascript_payload}
+                            } catch(e) {
+                                console.error("Tracker: AI JS Error", e);
+                            }
+                        })(docProxy);
                     })();
                 `;
                 shadow.appendChild(script);
@@ -744,16 +737,22 @@
 
             if (injection_target_selector === 'body') {
                 Object.assign(host.style, {
-                    position: 'fixed', bottom: '20px', right: '20px', width: 'auto'
+                    position: 'fixed', bottom: '20px', right: '20px', width: 'auto', maxWidth: '400px'
                 });
                 document.body.appendChild(host);
             } else {
-                target.appendChild(host);
+                targetElement.appendChild(host);
             }
 
-            shadow.querySelector('.vi-close-btn').addEventListener('click', () => {
-                host.remove();
+            shadow.addEventListener('click', (e) => {
+                const target = e.target;
+                const isCloseAction = target.classList.contains('vi-internal-close') ||
+                    target.classList.contains('close-btn') || target.closest('[data-action="close"]');
+                if (isCloseAction) {
+                    host.remove();
+                }
             });
+            console.log(`[Tracker] Injected AI UI into ${injection_target_selector}`);
         }
     }
 
