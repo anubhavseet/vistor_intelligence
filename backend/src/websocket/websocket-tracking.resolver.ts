@@ -30,17 +30,46 @@ export class WebSocketTrackingResolver {
         @Context() context: any,
     ): Promise<TrackingEventResponse> {
         try {
-            const { siteId, sessionId, eventType, data, timestamp } = input;
+            const { siteId, sessionId, eventType, timestamp } = input;
+
+            // Parse data if it's a JSON string to ensure proper storage format in MongoDB
+            let data: any = input.data;
+            try {
+                if (typeof data === 'string') {
+                    data = JSON.parse(data);
+                }
+            } catch (e) {
+                this.logger.warn(`Failed to parse event data json: ${e.message}`);
+            }
+
+            this.logger.log(`[WebSocket] Received event: ${eventType} for site: ${siteId}, session: ${sessionId}`);
 
             // Get or create session
             let session = await this.sessionManager.getSession(sessionId);
             if (!session) {
-                // Initialize new session
+                const ipAddress = this.getClientIP(context.req);
+                const userAgent = context.req?.headers?.['user-agent'] || '';
+
+                // Initialize new session (Redis)
                 await this.sessionManager.initSession(sessionId, siteId, {
                     socketId: context.req?.headers?.['x-socket-id'] || 'http-fallback',
-                    ipAddress: this.getClientIP(context.req),
-                    userAgent: context.req?.headers?.['user-agent'] || '',
+                    ipAddress,
+                    userAgent,
                 });
+
+                // Initialize Persistent Session (MongoDB)
+                // Try to extract metadata from data if possible (e.g. from pageview or signals)
+                let metadata = null;
+                if (data && data.metadata) metadata = data.metadata;
+
+                await this.streamProcessor.initPersistentSession(
+                    sessionId,
+                    siteId,
+                    ipAddress,
+                    userAgent,
+                    metadata
+                );
+
                 session = await this.sessionManager.getSession(sessionId);
             }
 

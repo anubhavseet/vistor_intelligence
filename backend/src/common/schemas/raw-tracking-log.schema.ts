@@ -8,17 +8,20 @@ export class RawTrackingLog {
     @Prop({ required: true, index: true })
     siteId: string;
 
-    @Prop({ required: true, index: true })
+    @Prop({ required: true, index: true, unique: true }) // Unique per session
     sessionId: string;
 
     @Prop()
     url: string;
 
     @Prop()
-    timestamp: Date;
+    timestamp: Date; // Last updated
 
-    @Prop({ type: MongooseSchema.Types.Mixed })
-    raw_signals: any; // The full JSON payload
+    @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
+    raw_signals: any; // Accumulated state (dwell, scroll, etc.)
+
+    @Prop({ type: [Object], default: [] })
+    events: any[]; // Stream of discrete events
 
     @Prop()
     ipHash: string;
@@ -29,5 +32,6 @@ export class RawTrackingLog {
 
 export const RawTrackingLogSchema = SchemaFactory.createForClass(RawTrackingLog);
 
-// Index for efficient querying by site/session
+// Index for efficient querying
 RawTrackingLogSchema.index({ siteId: 1, timestamp: -1 });
+

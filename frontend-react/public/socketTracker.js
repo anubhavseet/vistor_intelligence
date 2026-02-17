@@ -27,6 +27,7 @@
         const subscriptions = new Map();
         let nextId = 0;
         let pendingMessages = [];
+        let acknowledged = false;
 
         const connect = () => {
             if (connectionAttempts >= maxReconnectAttempts) {
@@ -35,17 +36,21 @@
             }
 
             connectionAttempts++;
+            console.log(`[Tracker] Connecting to ${url} (Attempt ${connectionAttempts})`);
             ws = new WebSocket(url, 'graphql-transport-ws');
 
             ws.onopen = () => {
                 console.log('[Tracker] ✅ Connected to GraphQL WebSocket');
                 connectionAttempts = 0;
+                console.log('[Tracker] Sending connection_init...');
                 send({ type: 'connection_init' });
             };
 
             ws.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
+                    console.log(message);
+                    console.log('[Tracker] 📩 Received:', message.type, message.id || '');
                     handleMessage(message);
                 } catch (e) {
                     console.error('[Tracker] WS Message Parse Error', e);
@@ -56,16 +61,22 @@
                 console.warn('[Tracker] WebSocket error', error);
             };
 
-            ws.onclose = () => {
-                console.log('[Tracker] Disconnected, reconnecting...');
+            ws.onclose = (event) => {
+                console.log(`[Tracker] ❌ Disconnected (Code: ${event.code}), reconnecting...`);
+                acknowledged = false;
                 setTimeout(connect, 2000);
             };
         };
 
         const send = (message) => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
+            const isOpen = ws && ws.readyState === WebSocket.OPEN;
+            const isInit = message.type === 'connection_init';
+
+            if (isOpen && (acknowledged || isInit)) {
+                console.log('[Tracker] 📤 Sending:', message.type, message.id || '');
                 ws.send(JSON.stringify(message));
             } else {
+                console.log('[Tracker] ⏳ Queuing message:', message.type, `(Open: ${isOpen}, Ack: ${acknowledged})`);
                 pendingMessages.push(message);
             }
         };
@@ -74,21 +85,28 @@
             const { type, id, payload } = message;
 
             if (type === 'connection_ack') {
+                console.log('[Tracker] ✅ Connection Acknowledged! Flushing queue...');
+                acknowledged = true;
                 // Resend pending
                 while (pendingMessages.length > 0) {
-                    send(pendingMessages.shift());
+                    const msg = pendingMessages.shift();
+                    console.log('[Tracker] 📤 Resending queued:', msg.type, msg.id || '');
+                    send(msg);
                 }
                 // Resubscribe
                 subscriptions.forEach((sub, subId) => {
+                    console.log('[Tracker] 🔄 Resubscribing:', subId);
                     send({ id: subId, type: 'subscribe', payload: sub.payload });
                 });
             } else if (type === 'next' && id) {
                 const sub = subscriptions.get(id);
                 if (sub && sub.onData) sub.onData(payload.data);
             } else if (type === 'error' && id) {
+                console.error('[Tracker] ❌ GraphQL Error:', id, payload);
                 const sub = subscriptions.get(id);
                 if (sub && sub.onError) sub.onError(payload);
             } else if (type === 'complete' && id) {
+                console.log('[Tracker] ☑️ Completed:', id);
                 subscriptions.delete(id);
             }
         };
@@ -367,10 +385,9 @@
                 timestamp: Date.now()
             };
 
-            // For signals_batch, we send the raw object to let backend handle it
-            if (eventType === 'signals_batch' || typeof data === 'object') {
-                event.data = data;
-            }
+            // Ensure data is always a JSON string as per GraphQL schema
+            // event.data is already stringified above.
+            // Removed incorrect object assignment block.
 
             if (this.isOnline) {
                 this.sendEventToBackend(event).catch(err => {
@@ -434,6 +451,9 @@
             // 4. Send Batch
             const batchData = JSON.parse(JSON.stringify(this.signals));
 
+            // Attach metadata for session enrichment
+            batchData.metadata = this.getMetadata();
+
             this.trackEvent('signals_batch', batchData);
 
             // 5. Reset
@@ -443,6 +463,36 @@
             this.signals.dead_clicks = [];
             this.signals.rage_clicks = 0;
             this.signals.hesitation_event = false;
+        }
+
+        getMetadata() {
+            return {
+                screen: {
+                    width: window.screen.width,
+                    height: window.screen.height,
+                    colorDepth: window.screen.colorDepth,
+                    orientation: (screen.orientation || {}).type
+                },
+                language: navigator.language,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                platform: navigator.platform,
+                connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+                hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
+                deviceMemory: navigator.deviceMemory || 'unknown',
+                renderer: (function () {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                        if (gl) {
+                            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                            if (debugInfo) {
+                                return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                            }
+                        }
+                        return 'unknown';
+                    } catch (e) { return 'unknown'; }
+                })()
+            };
         }
 
         // --- Event Listeners ---
@@ -645,7 +695,7 @@
 
         // --- UI Injection (Shadow DOM) ---
         handleUIInjection(payload) {
-            console.log('[Tracker] Received AI UI Payload');
+            console.log('[Tracker] Received AI UI Payload', payload);
             const { injection_target_selector, html_payload, scoped_css, javascript_payload } = payload;
 
             if (document.getElementById('vi-ai-host')) return; // Already showing one?

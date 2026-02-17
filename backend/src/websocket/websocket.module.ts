@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bull';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PubSub } from 'graphql-subscriptions';
 import { WebSocketTrackingResolver } from './websocket-tracking.resolver';
@@ -8,6 +9,7 @@ import { RawTrackingLog, RawTrackingLogSchema } from '../common/schemas/raw-trac
 import { PageEvent, PageEventSchema } from '../common/schemas/page-event.schema';
 import { VisitorSession, VisitorSessionSchema } from '../common/schemas/visitor-session.schema';
 import { IntentModule } from '../intent/intent.module';
+import { TrackingModule } from '../tracking/tracking.module';
 
 /**
  * WebSocket module for real-time visitor tracking via GraphQL subscriptions
@@ -26,7 +28,11 @@ import { IntentModule } from '../intent/intent.module';
             { name: PageEvent.name, schema: PageEventSchema },
             { name: VisitorSession.name, schema: VisitorSessionSchema },
         ]),
+        BullModule.registerQueue({
+            name: 'enrichment',
+        }),
         IntentModule,
+        TrackingModule
     ],
     providers: [
         // PubSub for GraphQL subscriptions
