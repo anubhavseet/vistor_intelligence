@@ -6,7 +6,7 @@ import { createClient } from 'graphql-ws';
 
 // HTTP Link for queries and mutations
 const httpLink = createHttpLink({
-    uri: import.meta.env.VITE_GRAPHQL_HTTP_URI || 'http://localhost:4040/graphql',
+    uri: import.meta.env.VITE_GRAPHQL_URI || 'http://localhost:4040/graphql',
     fetch: (uri, options) => {
         return fetch(uri, options);
     },
