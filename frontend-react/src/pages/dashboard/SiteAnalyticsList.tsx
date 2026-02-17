@@ -53,7 +53,7 @@ export default function SiteAnalyticsListPage() {
                         data?.getSites.map((site: any) => (
                             <Link
                                 key={site.siteId}
-                                to={`/dashboard/${site.siteId}?tab=analytics`}
+                                to={`/dashboard/sites/${site.siteId}/analytics`}
                                 className="group relative overflow-hidden rounded-xl border bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/50 hover:-translate-y-1"
                             >
                                 <div className="absolute inset-0 bg-gradient-to-br from-transparent to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />

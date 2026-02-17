@@ -94,7 +94,7 @@ export default function SiteOverviewPage() {
             name: 'View Analytics',
             description: 'See visitor insights',
             icon: BarChart3,
-            href: `/dashboard/${siteId}?tab=analytics`,
+            href: `/dashboard/sites/${siteId}/analytics`,
             color: 'text-pink-500',
             bgColor: 'bg-pink-500/10'
         },
