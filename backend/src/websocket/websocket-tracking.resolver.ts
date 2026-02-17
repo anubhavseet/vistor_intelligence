@@ -178,7 +178,7 @@ export class WebSocketTrackingResolver {
         }
 
         // Build signals object from event data
-        const signals: any = {
+        let signals: any = {
             dwell_time: {},
             scroll_velocity: 0,
             scroll_depth: 0,
@@ -191,7 +191,10 @@ export class WebSocketTrackingResolver {
         };
 
         // Populate signals based on event type
-        if (eventType === 'scroll') {
+        if (eventType === 'signals_batch') {
+            // Use the full batch data from tracker
+            signals = { ...signals, ...data };
+        } else if (eventType === 'scroll') {
             signals.scroll_depth = data.depth || 0;
             signals.scroll_velocity = data.velocity || 0;
         } else if (eventType === 'click') {

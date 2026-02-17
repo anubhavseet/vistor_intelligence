@@ -20,6 +20,24 @@ interface CohortAnalyticsProps {
     siteId: string;
 }
 
+interface CohortRetentionData {
+    cohortRetention: any; // It returns a JSON string or object depending on scalar
+}
+
+interface CohortRetentionVars {
+    siteId: string;
+    startDate: string;
+    endDate: string;
+}
+
+interface VisitorLifecycleData {
+    visitorLifecycle: any;
+}
+
+interface VisitorLifecycleVars {
+    siteId: string;
+}
+
 export const CohortAnalytics: React.FC<CohortAnalyticsProps> = ({ siteId }) => {
     const [dateRange, setDateRange] = useState(30);
 
@@ -29,7 +47,7 @@ export const CohortAnalytics: React.FC<CohortAnalyticsProps> = ({ siteId }) => {
         return { startDate: start, endDate: end };
     }, [dateRange]);
 
-    const { data: cohortData, loading: cohortLoading } = useQuery(GET_COHORT_RETENTION, {
+    const { data: cohortData, loading: cohortLoading } = useQuery<CohortRetentionData, CohortRetentionVars>(GET_COHORT_RETENTION, {
         variables: {
             siteId,
             startDate: startDate.toISOString(),
@@ -38,7 +56,7 @@ export const CohortAnalytics: React.FC<CohortAnalyticsProps> = ({ siteId }) => {
         skip: !siteId,
     });
 
-    const { data: lifecycleData, loading: lifecycleLoading } = useQuery(GET_VISITOR_LIFECYCLE, {
+    const { data: lifecycleData, loading: lifecycleLoading } = useQuery<VisitorLifecycleData, VisitorLifecycleVars>(GET_VISITOR_LIFECYCLE, {
         variables: { siteId },
         skip: !siteId,
     });
