@@ -216,7 +216,7 @@
         async bootstrap() {
             console.log(`[Tracker] Initializing for Site: ${this.siteId}`);
             try {
-                // Fetch Config
+                // Fetch Config via HTTP (REST/GraphQL over HTTP)
                 const query = `
                     query GetSiteConfig($siteId: String!) {
                         getSiteConfig(siteId: $siteId) {
@@ -227,10 +227,28 @@
                     }
                 `;
 
-                // Allow some time for connection
+                // Determine HTTP Endpoint
+                let httpUrl = this.apiUrl;
+                if (!httpUrl.endsWith('/graphql')) {
+                    httpUrl = httpUrl.endsWith('/') ? httpUrl + 'graphql' : httpUrl + '/graphql';
+                }
+
+                // Allow 1s delay for consistency
                 setTimeout(async () => {
                     try {
-                        const result = await this.client.execute(query, { siteId: this.siteId });
+                        const response = await fetch(httpUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                query,
+                                variables: { siteId: this.siteId }
+                            })
+                        });
+
+                        const result = await response.json();
                         const config = result.data?.getSiteConfig;
 
                         if (!config) {
@@ -267,7 +285,7 @@
                         console.warn('[Tracker] Config Fetch Failed - Starting Anyway', e);
                         this.startTracking();
                     }
-                }, 1000); // 1s delay for WS handshake
+                }, 1000);
 
             } catch (e) {
                 console.error('[Tracker] Bootstrap Error', e);
