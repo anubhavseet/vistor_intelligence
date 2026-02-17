@@ -10,7 +10,8 @@ import {
     Globe,
     ArrowLeft,
     Activity,
-    Eye
+    Eye,
+    Zap
 } from 'lucide-react';
 import {
     XAxis,
@@ -27,12 +28,16 @@ import 'leaflet/dist/leaflet.css';
 import { cn } from '@/lib/utils';
 import { BehavioralAnalytics } from '@/components/analytics/BehavioralAnalytics';
 import { VisualAnalytics } from '@/components/analytics/VisualAnalytics';
+import { LiveVisitorDashboard } from '@/components/analytics/LiveVisitorDashboard';
+import { CohortAnalytics } from '@/components/analytics/CohortAnalytics';
+import LiveVisitorMap from '@/components/LiveVisitorMap';
+import IntentStream from '@/components/IntentStream';
 import { GET_ANALYTICS } from '@/lib/queries';
 
 export default function SiteAnalyticsPage() {
     const { siteId } = useParams<{ siteId: string }>();
     const [days, setDays] = useState(30);
-    const [activeTab, setActiveTab] = useState<'overview' | 'behavioral' | 'visual'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'live' | 'map' | 'intent' | 'cohorts' | 'behavioral' | 'visual'>('overview');
     const [selectedVisualUrl, setSelectedVisualUrl] = useState<string>('');
 
     const { data, loading, error } = useQuery(GET_ANALYTICS, {
@@ -99,43 +104,107 @@ export default function SiteAnalyticsPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex items-center gap-4 border-b border-border">
+            <div className="flex items-center gap-1 bg-muted/20 p-1 rounded-xl w-fit border border-border/50 overflow-x-auto no-scrollbar">
                 <button
                     onClick={() => setActiveTab('overview')}
                     className={cn(
-                        "pb-3 text-sm font-medium border-b-2 transition-colors",
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
                         activeTab === 'overview'
-                            ? "border-primary text-primary"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}
                 >
                     Overview
                 </button>
                 <button
-                    onClick={() => setActiveTab('behavioral')}
+                    onClick={() => setActiveTab('live')}
                     className={cn(
-                        "pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
-                        activeTab === 'behavioral'
-                            ? "border-primary text-primary"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'live'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}
                 >
-                    <Activity size={16} />
+                    <div className={cn("w-2 h-2 rounded-full", activeTab === 'live' ? "bg-green-500 animate-pulse" : "bg-muted-foreground")}></div>
+                    Live
+                </button>
+                <button
+                    onClick={() => setActiveTab('map')}
+                    className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'map'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                >
+                    <Globe size={14} />
+                    Live Map
+                </button>
+                <button
+                    onClick={() => setActiveTab('intent')}
+                    className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'intent'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                >
+                    <Zap size={14} />
+                    Intent Stream
+                </button>
+                <button
+                    onClick={() => setActiveTab('cohorts')}
+                    className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'cohorts'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                >
+                    <Users size={14} />
+                    Cohorts
+                </button>
+                <button
+                    onClick={() => setActiveTab('behavioral')}
+                    className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'behavioral'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                >
+                    <Activity size={14} />
                     Behavioral
                 </button>
                 <button
                     onClick={() => setActiveTab('visual')}
                     className={cn(
-                        "pb-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
                         activeTab === 'visual'
-                            ? "border-primary text-primary"
-                            : "border-transparent text-muted-foreground hover:text-foreground"
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}
                 >
-                    <Eye size={16} />
+                    <Eye size={14} />
                     Visual Analytics
                 </button>
             </div>
+
+            {activeTab === 'live' && (
+                <LiveVisitorDashboard siteId={siteId || ''} />
+            )}
+
+            {activeTab === 'map' && (
+                <LiveVisitorMap siteId={siteId || ''} />
+            )}
+
+            {activeTab === 'intent' && (
+                <IntentStream siteId={siteId || ''} />
+            )}
+
+            {activeTab === 'cohorts' && (
+                <CohortAnalytics siteId={siteId || ''} />
+            )}
 
             {activeTab === 'behavioral' && (
                 <BehavioralAnalytics
