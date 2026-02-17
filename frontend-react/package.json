@@ -17,6 +17,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.30.0",
     "graphql": "^16.12.0",
+    "graphql-ws": "^6.0.7",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",

@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { BullModule } from '@nestjs/bull';
 import { ScheduleModule } from '@nestjs/schedule';
 
@@ -17,6 +19,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { HealthModule } from './health/health.module';
 import { CrawlerModule } from './crawler/crawler.module';
 import { UsersModule } from './users/users.module';
+import { WebSocketModule } from './websocket/websocket.module';
 
 @Module({
   imports: [
@@ -54,6 +57,12 @@ import { UsersModule } from './users/users.module';
       },
     }),
 
+    // Serve Static Files (Public Assets)
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public'),
+      serveRoot: '/',
+    }),
+
     // BullMQ for background jobs
     BullModule.forRoot({
       redis: {
@@ -77,6 +86,7 @@ import { UsersModule } from './users/users.module';
     HealthModule,
     CrawlerModule,
     UsersModule,
+    WebSocketModule, // Real-time tracking via GraphQL subscriptions
   ],
 })
 export class AppModule { }

@@ -1,10 +1,14 @@
 import { Resolver, Query, Args } from '@nestjs/graphql';
 import { AnalyticsService } from './analytics.service';
+import { CohortAnalyticsService } from './cohort-analytics.service';
 import { AnalyticsDashboardData, PageSection, SectionMetric, AreaStats } from './dto/analytics.types';
 
 @Resolver()
 export class AnalyticsResolver {
-  constructor(private analyticsService: AnalyticsService) { }
+  constructor(
+    private analyticsService: AnalyticsService,
+    private cohortAnalyticsService: CohortAnalyticsService,
+  ) { }
 
   @Query(() => AnalyticsDashboardData)
   async getAnalyticsDashboard(
@@ -40,5 +44,24 @@ export class AnalyticsResolver {
     @Args('days') days: number,
   ): Promise<AreaStats> {
     return this.analyticsService.getAreaStats(siteId, centerLat, centerLng, radiusKm, days);
+  }
+
+  // Cohort Analytics Queries
+  @Query(() => String)
+  async cohortRetention(
+    @Args('siteId') siteId: string,
+    @Args('startDate') startDate: Date,
+    @Args('endDate') endDate: Date,
+  ): Promise<string> {
+    const data = await this.cohortAnalyticsService.calculateCohortRetention(siteId, startDate, endDate);
+    return JSON.stringify(data);
+  }
+
+  @Query(() => String)
+  async visitorLifecycle(
+    @Args('siteId') siteId: string,
+  ): Promise<string> {
+    const data = await this.cohortAnalyticsService.calculateLifecycleStages(siteId);
+    return JSON.stringify(data);
   }
 }
