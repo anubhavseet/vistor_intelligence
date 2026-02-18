@@ -10,6 +10,7 @@ import { PageEvent, PageEventSchema } from '../common/schemas/page-event.schema'
 import { VisitorSession, VisitorSessionSchema } from '../common/schemas/visitor-session.schema';
 import { IntentModule } from '../intent/intent.module';
 import { TrackingModule } from '../tracking/tracking.module';
+import { EnrichmentModule } from '../enrichment/enrichment.module';
 
 /**
  * WebSocket module for real-time visitor tracking via GraphQL subscriptions
@@ -32,7 +33,8 @@ import { TrackingModule } from '../tracking/tracking.module';
             name: 'enrichment',
         }),
         IntentModule,
-        TrackingModule
+        TrackingModule,
+        EnrichmentModule,
     ],
     providers: [
         // PubSub for GraphQL subscriptions

@@ -9,6 +9,8 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { hashIP } from '../common/utils/crypto.util';
 import { parseUserAgent } from '../common/utils/user-agent.util';
+import { EnrichmentService } from '../enrichment/enrichment.service';
+import * as geoip from 'geoip-lite';
 
 export interface StreamEvent {
     sessionId: string;
@@ -34,6 +36,7 @@ export class StreamProcessingService {
         @InjectModel(VisitorSession.name)
         private visitorSessionModel: Model<VisitorSessionDocument>,
         @InjectQueue('enrichment') private enrichmentQueue: Queue,
+        private enrichmentService: EnrichmentService,
     ) { }
 
     /**
@@ -52,6 +55,23 @@ export class StreamProcessingService {
             const ipHash = hashIP(ipAddress || '0.0.0.0');
             const uaInfo = parseUserAgent(userAgent || '');
 
+            // Quick local GeoIP lookup for immediate geo data
+            let initialGeo: any = undefined;
+            if (ipAddress && ipAddress !== '0.0.0.0') {
+                const geo = geoip.lookup(ipAddress);
+                if (geo) {
+                    initialGeo = {
+                        country: geo.country,
+                        region: geo.region,
+                        city: geo.city,
+                        lat: geo.ll ? geo.ll[0] : 0,
+                        lng: geo.ll ? geo.ll[1] : 0,
+                        timezone: geo.timezone,
+                        source: 'ip',
+                    };
+                }
+            }
+
             session = await this.visitorSessionModel.create({
                 sessionId,
                 siteId,
@@ -60,6 +80,7 @@ export class StreamProcessingService {
                 deviceType: uaInfo.deviceType,
                 browser: uaInfo.browser,
                 os: uaInfo.os,
+                geo: initialGeo,
                 deviceFingerprint: metadata ? {
                     renderer: metadata.renderer,
                     hardwareConcurrency: metadata.hardwareConcurrency,
@@ -74,7 +95,7 @@ export class StreamProcessingService {
                 pagesVisited: []
             });
 
-            // Queue enrichment job
+            // Queue enrichment job for enhanced data (organization, VPN flags, etc.)
             await this.enrichmentQueue.add({
                 sessionId: session._id.toString(),
                 ipAddress: ipAddress,
@@ -145,8 +166,8 @@ export class StreamProcessingService {
         }
 
         // For complex signal data, store in RawTrackingLog (Aggregated Session Document)
+        // Note: VisitorSession update is handled by the resolver's call to updatePersistentSession
         if (event.eventType === 'signals_batch') {
-            await this.updatePersistentSession(session.siteId, event.sessionId, event.data);
             const batch = event.data;
 
             // Construct update operation
@@ -252,48 +273,125 @@ export class StreamProcessingService {
     }
 
     /**
-     * Update Persistent Session Document (Parity with REST)
+     * Update Persistent Session Document (Full Parity with REST TrackingService)
+     * Called from resolver with intent result after score calculation
      */
-    private async updatePersistentSession(siteId: string, sessionId: string, batch: any) {
+    async updatePersistentSession(
+        siteId: string,
+        sessionId: string,
+        batch: any,
+        intentResult?: { score: number; category: string },
+    ) {
         const session = await this.visitorSessionModel.findOne({ sessionId, siteId });
-        if (!session) return;
+        if (!session) {
+            this.logger.warn(`[updatePersistentSession] Session not found: ${sessionId}`);
+            return;
+        }
 
         session.lastActivityAt = new Date();
 
-        // Update Metrics
+        // --- Intent Score & Category ---
+        if (intentResult) {
+            session.intentScore = intentResult.score;
+            session.intentCategory = intentResult.category;
+        }
+
+        // --- Pages Visited & Page Views ---
         if (batch.url && !session.pagesVisited.includes(batch.url)) {
             session.pagesVisited.push(batch.url);
         }
 
-        const validDwellTimes = Object.values(batch.dwell_time || {}) as number[];
-        const totalDwellSeconds = validDwellTimes.reduce((a, b) => a + b, 0);
-
-        if (totalDwellSeconds > (session.totalTimeSpent || 0)) {
-            session.totalTimeSpent = totalDwellSeconds;
+        // Check for explicit page_view events to increment count
+        if (batch.events && batch.events.some((e: any) => e.type === 'page_view')) {
+            session.totalPageViews = (session.totalPageViews || 0) + 1;
+        } else if (session.totalPageViews === 0 && batch.url) {
+            // Fallback for initial sessions
+            session.totalPageViews = 1;
         }
 
+        // --- Total Time Spent (use max dwell = actual wall-clock time) ---
+        // dwell_time values from tracker are already in seconds (e.g., {heroSection: 5.2, pricingSection: 5.2})
+        // Multiple elements can be visible simultaneously, so summing them inflates the time.
+        // Use Math.max to get the actual wall-clock time the user was active during this batch.
+        const validDwellTimes = Object.values(batch.dwell_time || {}) as number[];
+        const batchWallClockSeconds = validDwellTimes.length > 0 ? Math.max(...validDwellTimes) : 0;
+        session.totalTimeSpent = (session.totalTimeSpent || 0) + batchWallClockSeconds;
+
+        // --- Max Scroll Depth ---
         if (batch.scroll_depth) {
             session.maxScrollDepth = Math.max(session.maxScrollDepth || 0, batch.scroll_depth);
         }
 
+        // --- Referrer ---
         if (batch.referrer && !session.referrer) {
             session.referrer = batch.referrer;
         }
 
-        // UTM Parsing
+        // --- Geolocation GPS Overwrite ---
+        if (batch.geolocation && batch.geolocation.lat) {
+            if (!session.geo) session.geo = {};
+            session.geo.lat = batch.geolocation.lat;
+            session.geo.lng = batch.geolocation.lng;
+            session.geo.accuracy = batch.geolocation.accuracy;
+            session.geo.source = 'gps';
+        } else if (!session.geo || !session.geo.lat) {
+            if (session.geo) session.geo.source = 'ip';
+        }
+
+        // --- UTM Parsing ---
         if (batch.url && (!session.utmParams || session.utmParams.length === 0)) {
             try {
                 const urlObj = new URL(batch.url.startsWith('http') ? batch.url : `http://${batch.url}`);
                 const params: string[] = [];
-                urlObj.searchParams.forEach((value, keys) => {
-                    if (keys.startsWith('utm_')) params.push(`${keys}=${value}`);
+                urlObj.searchParams.forEach((value, key) => {
+                    if (key.startsWith('utm_')) params.push(`${key}=${value}`);
                 });
                 if (params.length > 0) session.utmParams = params;
             } catch (e) { }
         }
 
-        session.lastActivityAt = new Date();
         await session.save();
+
+        // --- Create PageEvents from batch (parity with REST) ---
+        const eventsToSave: any[] = [];
+
+        // Custom events (exit_intent, etc.)
+        if (batch.events && Array.isArray(batch.events)) {
+            for (const evt of batch.events) {
+                eventsToSave.push({
+                    sessionId,
+                    siteId,
+                    pageUrl: batch.url || '',
+                    eventType: evt.type,
+                    timestamp: new Date(evt.timestamp || Date.now()),
+                    metadata: evt.payload || {},
+                });
+            }
+        }
+
+        // Top interactions (clicks, hovers, inputs)
+        if (batch.interactions) {
+            for (const [selector, interaction] of Object.entries(batch.interactions) as any[]) {
+                if (interaction.clicks > 0) {
+                    eventsToSave.push({
+                        sessionId,
+                        siteId,
+                        pageUrl: batch.url || '',
+                        eventType: 'click',
+                        timestamp: new Date(interaction.last_timestamp || Date.now()),
+                        metadata: { selector, count: interaction.clicks },
+                    });
+                }
+            }
+        }
+
+        if (eventsToSave.length > 0) {
+            try {
+                await this.pageEventModel.insertMany(eventsToSave);
+            } catch (e) {
+                this.logger.error(`Failed to save page events for session ${sessionId}`, e);
+            }
+        }
     }
 
     /**

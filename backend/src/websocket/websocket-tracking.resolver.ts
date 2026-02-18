@@ -102,13 +102,34 @@ export class WebSocketTrackingResolver {
 
                 // If UI payload generated, publish it
                 if (uiPayload) {
+                    // Stringify uiPayload since GraphQL type expects a String
+                    const payloadString = typeof uiPayload === 'string' ? uiPayload : JSON.stringify(uiPayload);
                     await this.pubSub.publish(`uiInjection:${sessionId}`, {
                         uiInjection: {
                             sessionId,
-                            payload: uiPayload,
+                            payload: payloadString,
                             timestamp: Date.now(),
                         },
                     });
+                }
+
+                // Persist intent score + session metrics to MongoDB VisitorSession
+                if (eventType === 'signals_batch') {
+                    // Full session update with batch data
+                    await this.streamProcessor.updatePersistentSession(
+                        siteId,
+                        sessionId,
+                        data,
+                        { score: intentResult.score, category: intentResult.category },
+                    );
+                } else {
+                    // For non-batch events, still persist the intent score change
+                    await this.streamProcessor.updatePersistentSession(
+                        siteId,
+                        sessionId,
+                        { url: data?.url },
+                        { score: intentResult.score, category: intentResult.category },
+                    );
                 }
             }
 
@@ -128,7 +149,7 @@ export class WebSocketTrackingResolver {
                 success: true,
                 sessionId,
                 intentScore,
-                uiPayload: uiPayload ? JSON.stringify(uiPayload) : null,
+                uiPayload: uiPayload ? (typeof uiPayload === 'string' ? uiPayload : JSON.stringify(uiPayload)) : null,
             };
 
         } catch (error) {
@@ -193,7 +214,7 @@ export class WebSocketTrackingResolver {
     // Helper methods
 
     private shouldUpdateIntent(eventType: string): boolean {
-        return ['click', 'scroll', 'exit_intent', 'form_focus', 'pageview'].includes(eventType);
+        return ['click', 'scroll', 'exit_intent', 'form_focus', 'pageview', 'signals_batch', 'rage_click'].includes(eventType);
     }
 
     private async updateIntentScore(

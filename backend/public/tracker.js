@@ -319,7 +319,16 @@
                 }
             `;
             this.client.subscribe(uiQuery, { sessionId: this.sessionId }, (data) => {
-                if (data.uiInjection) this.handleUIInjection(data.uiInjection.payload);
+                if (data && data.uiInjection && data.uiInjection.payload) {
+                    try {
+                        const payload = typeof data.uiInjection.payload === 'string'
+                            ? JSON.parse(data.uiInjection.payload)
+                            : data.uiInjection.payload;
+                        this.handleUIInjection(payload);
+                    } catch (e) {
+                        console.error('[Tracker] Failed to parse UI payload', e);
+                    }
+                }
             });
 
             // Intent Update (Optional Debug)
@@ -349,11 +358,6 @@
                 timestamp: Date.now()
             };
 
-            // For signals_batch, we send the raw object to let backend handle it
-            if (eventType === 'signals_batch' || typeof data === 'object') {
-                event.data = data;
-            }
-
             if (this.isOnline) {
                 this.sendEventToBackend(event).catch(err => {
                     console.error('[Tracker] Send failed', err);
@@ -370,10 +374,22 @@
                     trackEvent(input: $input) {
                         success
                         sessionId
+                        intentScore
+                        uiPayload
                     }
                 }
             `;
-            return this.client.execute(mutation, { input: event });
+            const result = await this.client.execute(mutation, { input: event });
+            // Handle UI injection from mutation response
+            if (result && result.trackEvent && result.trackEvent.uiPayload) {
+                try {
+                    const payload = JSON.parse(result.trackEvent.uiPayload);
+                    this.handleUIInjection(payload);
+                } catch (e) {
+                    console.error('[Tracker] Failed to parse UI payload from response', e);
+                }
+            }
+            return result;
         }
 
         async flushBuffer() {
@@ -418,13 +434,9 @@
 
             this.trackEvent('signals_batch', batchData);
 
-            // 5. Reset
-            this.signals.events = [];
-            this.signals.copy_text = [];
-            this.signals.text_selections = [];
-            this.signals.dead_clicks = [];
-            this.signals.rage_clicks = 0;
-            this.signals.hesitation_event = false;
+            // 5. Full Reset — clear all accumulated signals to avoid stale data
+            this.signals = this.resetSignals();
+            this.accumulatedDwell = {};
         }
 
         // --- Event Listeners ---
@@ -690,13 +702,27 @@
     }
 
     // --- Auto-Initialize ---
-    const script = document.currentScript;
+    let script = document.currentScript;
+    if (!script) {
+        const allScripts = document.querySelectorAll('script[data-site-id]');
+        for (let i = 0; i < allScripts.length; i++) {
+            const s = allScripts[i];
+            if (s.src && (s.src.indexOf('socketTracker') !== -1 || s.src.indexOf('tracker') !== -1)) {
+                script = s;
+                break;
+            }
+        }
+    }
+
     if (script) {
         const siteId = script.getAttribute('data-site-id');
         const apiUrl = script.getAttribute('data-api-url') || script.getAttribute('data-graphql-endpoint');
         if (siteId) {
+            console.log('[Tracker] Auto-initializing with siteId:', siteId, 'apiUrl:', apiUrl);
             window.VisitorIntelligence = new VisitorIntelligenceTracker({ siteId, apiUrl });
         }
+    } else {
+        console.warn('[Tracker] Could not find script element for auto-initialization.');
     }
 
     // Expose

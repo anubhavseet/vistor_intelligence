@@ -160,8 +160,11 @@ export class TrackingService {
     }
 
     // Update Session Metrics (Time & Scroll)
-    const batchDwellTime = Object.values(data.signals.dwell_time || {}).reduce((a, b) => a + (b as number), 0);
-    session.totalTimeSpent = (session.totalTimeSpent || 0) + (batchDwellTime / 1000); // Convert ms to s
+    // dwell_time values are already in seconds. Multiple elements can be visible simultaneously,
+    // so use Math.max to get wall-clock time, not the sum of all element dwell times.
+    const dwellValues = Object.values(data.signals.dwell_time || {}) as number[];
+    const batchWallClockSeconds = dwellValues.length > 0 ? Math.max(...dwellValues) : 0;
+    session.totalTimeSpent = (session.totalTimeSpent || 0) + batchWallClockSeconds;
 
     if (data.signals.scroll_depth) {
       session.maxScrollDepth = Math.max(session.maxScrollDepth || 0, data.signals.scroll_depth);

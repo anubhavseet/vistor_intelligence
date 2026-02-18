@@ -412,10 +412,22 @@
                     trackEvent(input: $input) {
                         success
                         sessionId
+                        intentScore
+                        uiPayload
                     }
                 }
             `;
-            return this.client.execute(mutation, { input: event });
+            const result = await this.client.execute(mutation, { input: event });
+            // Handle UI injection from mutation response (in addition to subscription)
+            if (result && result.trackEvent && result.trackEvent.uiPayload) {
+                try {
+                    const payload = JSON.parse(result.trackEvent.uiPayload);
+                    this.handleUIInjection(payload);
+                } catch (e) {
+                    console.error('[Tracker] Failed to parse UI payload from response', e);
+                }
+            }
+            return result;
         }
 
         async flushBuffer() {
@@ -460,13 +472,9 @@
 
             this.trackEvent('signals_batch', batchData);
 
-            // 5. Reset
-            this.signals.events = [];
-            this.signals.copy_text = [];
-            this.signals.text_selections = [];
-            this.signals.dead_clicks = [];
-            this.signals.rage_clicks = 0;
-            this.signals.hesitation_event = false;
+            // 5. Full Reset — clear all accumulated signals to avoid stale data
+            this.signals = this.resetSignals();
+            this.accumulatedDwell = {};
         }
 
         // --- Event Listeners ---
@@ -757,13 +765,29 @@
     }
 
     // --- Auto-Initialize ---
-    const script = document.currentScript;
+    // document.currentScript is null for dynamically created <script> elements.
+    // Fallback: find the script tag by its src attribute containing 'socketTracker'.
+    let script = document.currentScript;
+    if (!script) {
+        const allScripts = document.querySelectorAll('script[data-site-id]');
+        for (let i = 0; i < allScripts.length; i++) {
+            const s = allScripts[i];
+            if (s.src && s.src.indexOf('socketTracker') !== -1) {
+                script = s;
+                break;
+            }
+        }
+    }
+
     if (script) {
         const siteId = script.getAttribute('data-site-id');
         const apiUrl = script.getAttribute('data-api-url') || script.getAttribute('data-graphql-endpoint');
         if (siteId) {
+            console.log('[Tracker] Auto-initializing with siteId:', siteId, 'apiUrl:', apiUrl);
             window.VisitorIntelligence = new VisitorIntelligenceTracker({ siteId, apiUrl });
         }
+    } else {
+        console.warn('[Tracker] Could not find script element for auto-initialization. Use manual init: new VisitorIntelligenceTracker({ siteId, apiUrl })');
     }
 
     // Expose
