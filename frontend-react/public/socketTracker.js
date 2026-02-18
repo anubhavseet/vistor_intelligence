@@ -310,34 +310,38 @@
             }
         }
 
+        getMetadata() {
+            return {
+                screen: {
+                    width: window.screen.width,
+                    height: window.screen.height,
+                    colorDepth: window.screen.colorDepth,
+                    orientation: (screen.orientation || {}).type
+                },
+                language: navigator.language,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                platform: navigator.platform,
+                connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+                hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
+                deviceMemory: navigator.deviceMemory || 'unknown',
+                renderer: (function () {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                        if (gl) {
+                            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                            return debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'unknown';
+                        }
+                        return 'unknown';
+                    } catch (e) { return 'unknown'; }
+                })()
+            };
+        }
+
         async bootstrapSession() {
             try {
-                // Collect Metadata (Same as REST tracker)
-                const metadata = {
-                    screen: {
-                        width: window.screen.width,
-                        height: window.screen.height,
-                        colorDepth: window.screen.colorDepth,
-                        orientation: (screen.orientation || {}).type
-                    },
-                    language: navigator.language,
-                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    platform: navigator.platform,
-                    connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
-                    hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
-                    deviceMemory: navigator.deviceMemory || 'unknown',
-                    renderer: (function () {
-                        try {
-                            const canvas = document.createElement('canvas');
-                            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                            if (gl) {
-                                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-                                return debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'unknown';
-                            }
-                            return 'unknown';
-                        } catch (e) { return 'unknown'; }
-                    })()
-                };
+                // Collect Metadata
+                const metadata = this.getMetadata();
 
                 const input = {
                     sessionId: this.sessionId,
@@ -455,17 +459,26 @@
         // --- Tracking Logic ---
 
         trackEvent(eventType, data) {
+            const payloadData = {
+                ...data,
+                userAgent: navigator.userAgent
+            };
+
+            // Attach rich metadata for session initialization events
+            if (eventType === 'pageview' || eventType === 'signals_batch') {
+                payloadData.metadata = this.getMetadata();
+            }
+
             const event = {
                 siteId: this.siteId,
                 sessionId: this.sessionId,
                 eventType,
-                data: JSON.stringify(data),
+                data: JSON.stringify(payloadData),
                 timestamp: Date.now()
             };
 
             // Ensure data is always a JSON string as per GraphQL schema
             // event.data is already stringified above.
-            // Removed incorrect object assignment block.
 
             if (this.isOnline) {
                 this.sendEventToBackend(event).catch(err => {

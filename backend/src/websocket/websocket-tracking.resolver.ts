@@ -48,7 +48,12 @@ export class WebSocketTrackingResolver {
             let session = await this.sessionManager.getSession(sessionId);
             if (!session) {
                 const ipAddress = this.getClientIP(context.req);
-                const userAgent = context.req?.headers?.['user-agent'] || '';
+                let userAgent = context.req?.headers?.['user-agent'] || '';
+
+                // Prefer userAgent from payload if available (sent by socketTracker)
+                if (data && data.userAgent) {
+                    userAgent = data.userAgent;
+                }
 
                 // Initialize new session (Redis)
                 await this.sessionManager.initSession(sessionId, siteId, {
