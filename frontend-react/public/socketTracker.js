@@ -310,8 +310,79 @@
             }
         }
 
-        startTracking() {
+        async bootstrapSession() {
+            try {
+                // Collect Metadata (Same as REST tracker)
+                const metadata = {
+                    screen: {
+                        width: window.screen.width,
+                        height: window.screen.height,
+                        colorDepth: window.screen.colorDepth,
+                        orientation: (screen.orientation || {}).type
+                    },
+                    language: navigator.language,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    platform: navigator.platform,
+                    connection: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+                    hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
+                    deviceMemory: navigator.deviceMemory || 'unknown',
+                    renderer: (function () {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                            if (gl) {
+                                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                                return debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'unknown';
+                            }
+                            return 'unknown';
+                        } catch (e) { return 'unknown'; }
+                    })()
+                };
+
+                const input = {
+                    sessionId: this.sessionId,
+                    eventType: 'pageview',
+                    pageUrl: window.location.href,
+                    referrer: document.referrer,
+                    userAgent: navigator.userAgent,
+                    timestamp: Date.now(),
+                    metadata: JSON.stringify(metadata)
+                };
+
+                const mutation = `
+                    mutation Track($siteId: String!, $apiKey: String!, $input: TrackInput!) {
+                        track(siteId: $siteId, apiKey: $apiKey, input: $input) {
+                            sessionId
+                            ui_payload
+                        }
+                    }
+                `;
+
+                // Determine HTTP Endpoint
+                let httpUrl = this.apiUrl;
+                if (!httpUrl.endsWith('/graphql')) {
+                    httpUrl = httpUrl.endsWith('/') ? httpUrl + 'graphql' : httpUrl + '/graphql';
+                }
+
+                await fetch(httpUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: mutation,
+                        variables: { siteId: this.siteId, apiKey: 'public', input }
+                    })
+                });
+                console.log('[Tracker] Session bootstrapped via HTTP');
+            } catch (e) {
+                console.warn('[Tracker] Session bootstrap failed (will fallback to WS)', e);
+            }
+        }
+
+        async startTracking() {
             if (this.isTrackingActive) return;
+
+            // 1. Bootstrap Session via HTTP (for rich context)
+            await this.bootstrapSession();
 
             this.setupSubscriptions();
 
