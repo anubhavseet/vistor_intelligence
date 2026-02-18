@@ -387,7 +387,7 @@
 
             // 1. Bootstrap Session via HTTP (for rich context)
             await this.bootstrapSession();
-
+            console.log('[Tracker] Session bootstrapped');
             this.setupSubscriptions();
 
             // 2. Start Tracking (with delay)
