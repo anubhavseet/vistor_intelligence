@@ -57,6 +57,54 @@ export class DailyStat {
     pageViews: number;
 }
 
+
+
+// ─── UTM Attribution ────────────────────────────────────────────────────────
+
+@ObjectType()
+export class UtmCampaignStat {
+    @Field()
+    campaign: string;
+
+    @Field()
+    source: string;
+
+    @Field()
+    medium: string;
+
+    @Field(() => Int)
+    visitors: number;
+
+    @Field(() => Int)
+    newVisitors: number;
+
+    @Field(() => Float)
+    bounceRate: number;
+
+    @Field(() => Float)
+    avgTimeSpent: number;
+
+    @Field(() => Float)
+    conversionRate: number;
+}
+
+// ─── Device & Tech ──────────────────────────────────────────────────────────
+
+@ObjectType()
+export class DeviceStat {
+    @Field()
+    deviceType: string; // mobile, desktop, tablet
+
+    @Field()
+    browser: string;
+
+    @Field(() => Int)
+    visitors: number;
+
+    @Field(() => Float)
+    avgIntentScore: number;
+}
+
 @ObjectType()
 export class HeatMapPoint {
     @Field(() => Float)

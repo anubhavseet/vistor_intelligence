@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SessionManagerService } from './session-manager.service';
@@ -11,6 +11,8 @@ import { hashIP } from '../common/utils/crypto.util';
 import { parseUserAgent } from '../common/utils/user-agent.util';
 import { EnrichmentService } from '../enrichment/enrichment.service';
 import * as geoip from 'geoip-lite';
+import { PubSub } from 'graphql-subscriptions';
+import { AdminAlertType } from '../analytics/dto/cohort.types';
 
 export interface StreamEvent {
     sessionId: string;
@@ -37,6 +39,7 @@ export class StreamProcessingService {
         private visitorSessionModel: Model<VisitorSessionDocument>,
         @InjectQueue('enrichment') private enrichmentQueue: Queue,
         private enrichmentService: EnrichmentService,
+        @Inject('PUB_SUB') private pubSub: PubSub,
     ) { }
 
     /**
@@ -223,8 +226,25 @@ export class StreamProcessingService {
      * Run real-time analytics on event stream
      */
     private async runStreamAnalytics(event: StreamEvent): Promise<void> {
-        // Detect anomalies (e.g., bot behavior)
-        await this.detectAnomalies(event);
+        // Detect anomalies (e.g., bot behavior, rage clicks) and publish alerts
+        const anomaly = await this.detectAnomalies(event);
+        if (anomaly) {
+            const session = await this.sessionManager.getSession(event.sessionId);
+            if (session) {
+                await this.pubSub.publish(`alerts:${session.siteId}`, {
+                    adminAlerts: {
+                        type: anomaly.type || 'anomaly',
+                        sessionId: anomaly.sessionId,
+                        score: anomaly.metric,
+                        timestamp: Date.now(),
+                        message: anomaly.type === 'rage_click'
+                            ? `Rage click on ${anomaly.selector}`
+                            : `Anomaly: ${anomaly.type} (${anomaly.severity})`,
+                        severity: anomaly.severity || 'warning',
+                    } satisfies Partial<AdminAlertType>,
+                });
+            }
+        }
 
         // Update aggregated metrics
         await this.updateMetrics(event);

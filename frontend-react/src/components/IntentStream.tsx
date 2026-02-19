@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Activity,
@@ -15,9 +15,10 @@ import {
     ExternalLink
 } from "lucide-react";
 import { gql } from "@apollo/client";
-import { useQuery } from "@apollo/client/react";
+import { useQuery, useSubscription } from "@apollo/client/react";
 import { cn } from "@/lib/utils";
 
+// Full session data — fetched once for detail panel richness
 const GET_LIVE_SESSIONS = gql`
   query GetLiveSessions($siteId: String!) {
     getLiveSessions(siteId: $siteId) {
@@ -56,15 +57,108 @@ const GET_LIVE_SESSIONS = gql`
   }
 `;
 
+// Bug #11 fix: real-time subscription for score/page updates
+const LIVE_SESSION_SUBSCRIPTION = gql`
+  subscription LiveSessionUpdate($siteId: String!) {
+    liveSessionUpdate(siteId: $siteId) {
+      sessionId
+      eventType
+      intentScore
+      lastActivity
+      currentPage
+    }
+  }
+`;
+
 export default function IntentStream({ siteId }: { siteId: string }) {
     const [selectedSession, setSelectedSession] = useState<any>(null);
+
+    // Full session map from initial query — provides rich detail panel data
+    const [sessionMap, setSessionMap] = useState<Map<string, any>>(new Map());
+
+    // Bug #11 fix: fetch full list once (no poll) — subscription handles updates
+    // pollInterval reduced from 3000ms → 10000ms to refresh full details periodically
     const { data, loading } = useQuery(GET_LIVE_SESSIONS, {
         variables: { siteId },
-        pollInterval: 3000,
-        fetchPolicy: "network-only"
+        pollInterval: 10000,
+        fetchPolicy: "network-only",
     });
 
-    const sessions = (data as any)?.getLiveSessions || [];
+    // Populate sessionMap from the query result
+    useEffect(() => {
+        if ((data as any)?.getLiveSessions) {
+            setSessionMap(prev => {
+                const next = new Map(prev);
+                ((data as any).getLiveSessions as any[]).forEach((s: any) => {
+                    next.set(s.sessionId, s);
+                });
+                return next;
+            });
+        }
+    }, [data]);
+
+    // Real-time subscription: merge live score/page updates into the session map
+    useSubscription(LIVE_SESSION_SUBSCRIPTION, {
+        variables: { siteId },
+        onData: ({ data: subData }: { data: any }) => {
+            const update = subData?.data?.liveSessionUpdate;
+            if (!update) return;
+
+            setSessionMap(prev => {
+                const next = new Map(prev);
+                const existing = next.get(update.sessionId);
+                if (existing) {
+                    // Merge real-time update into existing full session data
+                    next.set(update.sessionId, {
+                        ...existing,
+                        intentScore: update.intentScore,
+                        intentCategory: update.intentScore >= 70 ? 'Lead'
+                            : update.intentScore >= 30 ? 'Researcher' : 'Bouncer',
+                        lastActivityAt: update.lastActivity,
+                        isActive: true,
+                        pagesVisited: update.currentPage && !existing.pagesVisited?.includes(update.currentPage)
+                            ? [...(existing.pagesVisited || []), update.currentPage]
+                            : existing.pagesVisited,
+                    });
+                } else {
+                    // New session not yet in the full query — add with basic data
+                    next.set(update.sessionId, {
+                        sessionId: update.sessionId,
+                        intentScore: update.intentScore,
+                        intentCategory: update.intentScore >= 70 ? 'Lead'
+                            : update.intentScore >= 30 ? 'Researcher' : 'Bouncer',
+                        lastActivityAt: update.lastActivity,
+                        isActive: true,
+                        pagesVisited: update.currentPage ? [update.currentPage] : [],
+                    });
+                }
+                return next;
+            });
+        },
+    });
+
+    // Cleanup sessions inactive for 60+ seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const now = Date.now();
+            setSessionMap(prev => {
+                const next = new Map(prev);
+                for (const [id, session] of next.entries()) {
+                    if (session.lastActivityAt && now - session.lastActivityAt > 60000) {
+                        next.set(id, { ...session, isActive: false });
+                    }
+                }
+                return next;
+            });
+        }, 10000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const sessions = Array.from(sessionMap.values())
+        .filter(s => s.isActive !== false)
+        .sort((a, b) => b.intentScore - a.intentScore);
+
+
 
     return (
         <div className="relative min-h-[600px]">

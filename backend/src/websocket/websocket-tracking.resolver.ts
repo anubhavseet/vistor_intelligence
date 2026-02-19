@@ -5,6 +5,7 @@ import { SessionManagerService } from './session-manager.service';
 import { StreamProcessingService } from './stream-processing.service';
 import { IntentService } from '../intent/intent.service';
 import { TrackingEventInput, TrackingEventResponse, LiveSessionUpdate, IntentUpdate, UIInjectionPayload } from './dto/websocket.types';
+import { AdminAlertType } from '../analytics/dto/cohort.types';
 
 /**
  * GraphQL WebSocket Resolver for real-time tracking
@@ -88,6 +89,7 @@ export class WebSocketTrackingResolver {
 
             // Update intent score if applicable
             let intentScore = session?.intentScore || 0;
+            const previousScore = session?.intentScore || 0; // Capture before update
             let uiPayload = null;
 
             if (this.shouldUpdateIntent(eventType)) {
@@ -107,7 +109,6 @@ export class WebSocketTrackingResolver {
 
                 // If UI payload generated, publish it
                 if (uiPayload) {
-                    // Stringify uiPayload since GraphQL type expects a String
                     const payloadString = typeof uiPayload === 'string' ? uiPayload : JSON.stringify(uiPayload);
                     await this.pubSub.publish(`uiInjection:${sessionId}`, {
                         uiInjection: {
@@ -118,9 +119,21 @@ export class WebSocketTrackingResolver {
                     });
                 }
 
+                // Bug #13 fix: Auto-trigger VIP alert when score crosses 70 threshold.
+                // Uses vipAlertSent flag to prevent duplicate alerts per session.
+                const freshSession = await this.sessionManager.getSession(sessionId);
+                if (
+                    intentResult.score >= 70 &&
+                    previousScore < 70 &&
+                    !freshSession?.vipAlertSent
+                ) {
+                    await this.publishVIPAlert(siteId, sessionId, intentResult.score);
+                    await this.sessionManager.updateSession(sessionId, { vipAlertSent: true });
+                    this.logger.log(`🌟 VIP alert fired for session ${sessionId} (score: ${intentResult.score})`);
+                }
+
                 // Persist intent score + session metrics to MongoDB VisitorSession
                 if (eventType === 'signals_batch') {
-                    // Full session update with batch data
                     await this.streamProcessor.updatePersistentSession(
                         siteId,
                         sessionId,
@@ -128,7 +141,6 @@ export class WebSocketTrackingResolver {
                         { score: intentResult.score, category: intentResult.category },
                     );
                 } else {
-                    // For non-batch events, still persist the intent score change
                     await this.streamProcessor.updatePersistentSession(
                         siteId,
                         sessionId,
@@ -211,7 +223,8 @@ export class WebSocketTrackingResolver {
     /**
      * Subscription: Admin alerts (VIP visitors, anomalies, etc.)
      */
-    @Subscription(() => String)
+    // Bug #14 fix: adminAlerts now returns a typed AdminAlertType instead of raw JSON string.
+    @Subscription(() => AdminAlertType)
     adminAlerts(@Args('siteId') siteId: string) {
         return this.pubSub.asyncIterator(`alerts:${siteId}`);
     }
@@ -292,29 +305,38 @@ export class WebSocketTrackingResolver {
     }
 
     /**
-     * Publish VIP visitor alert to admins
+     * Publish VIP visitor alert to admins.
+     * Bug #14 fix: publishes typed AdminAlertType object, not a JSON string.
      */
     async publishVIPAlert(siteId: string, sessionId: string, score: number): Promise<void> {
         await this.pubSub.publish(`alerts:${siteId}`, {
-            adminAlerts: JSON.stringify({
+            adminAlerts: {
                 type: 'vip_visitor',
                 sessionId,
                 score,
                 timestamp: Date.now(),
-            }),
+                message: `High-intent visitor detected (score: ${score})`,
+                severity: 'info',
+            },
         });
     }
 
     /**
-     * Publish anomaly alert to admins
+     * Publish anomaly alert to admins.
+     * Bug #14 fix: publishes typed AdminAlertType object, not a JSON string.
      */
     async publishAnomalyAlert(siteId: string, anomaly: any): Promise<void> {
         await this.pubSub.publish(`alerts:${siteId}`, {
-            adminAlerts: JSON.stringify({
-                type: 'anomaly',
-                ...anomaly,
+            adminAlerts: {
+                type: anomaly.type || 'anomaly',
+                sessionId: anomaly.sessionId,
+                score: anomaly.metric,
                 timestamp: Date.now(),
-            }),
+                message: anomaly.type === 'rage_click'
+                    ? `Rage click detected on ${anomaly.selector}`
+                    : `Anomaly: ${anomaly.type}`,
+                severity: 'warning',
+            },
         });
     }
 }

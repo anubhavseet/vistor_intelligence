@@ -30,6 +30,7 @@ import { BehavioralAnalytics } from '@/components/analytics/BehavioralAnalytics'
 import { VisualAnalytics } from '@/components/analytics/VisualAnalytics';
 import { LiveVisitorDashboard } from '@/components/analytics/LiveVisitorDashboard';
 import { CohortAnalytics } from '@/components/analytics/CohortAnalytics';
+import { AttributionAnalytics } from '@/components/analytics/AttributionAnalytics';
 import LiveVisitorMap from '@/components/LiveVisitorMap';
 import IntentStream from '@/components/IntentStream';
 import { GET_ANALYTICS } from '@/lib/queries';
@@ -37,7 +38,7 @@ import { GET_ANALYTICS } from '@/lib/queries';
 export default function SiteAnalyticsPage() {
     const { siteId } = useParams<{ siteId: string }>();
     const [days, setDays] = useState(30);
-    const [activeTab, setActiveTab] = useState<'overview' | 'live' | 'map' | 'intent' | 'cohorts' | 'behavioral' | 'visual'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'live' | 'map' | 'intent' | 'cohorts' | 'behavioral' | 'visual' | 'attribution'>('overview');
     const [selectedVisualUrl, setSelectedVisualUrl] = useState<string>('');
 
     const { data, loading, error } = useQuery(GET_ANALYTICS, {
@@ -165,6 +166,18 @@ export default function SiteAnalyticsPage() {
                     Cohorts
                 </button>
                 <button
+                    onClick={() => setActiveTab('attribution')}
+                    className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'attribution'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                >
+                    <BarChart3 size={14} />
+                    Attribution
+                </button>
+                <button
                     onClick={() => setActiveTab('behavioral')}
                     className={cn(
                         "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
@@ -204,6 +217,10 @@ export default function SiteAnalyticsPage() {
 
             {activeTab === 'cohorts' && (
                 <CohortAnalytics siteId={siteId || ''} />
+            )}
+
+            {activeTab === 'attribution' && (
+                <AttributionAnalytics siteId={siteId || ''} />
             )}
 
             {activeTab === 'behavioral' && (

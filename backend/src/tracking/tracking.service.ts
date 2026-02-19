@@ -279,6 +279,7 @@ export class TrackingService {
     // }
 
     const ipHash = hashIP(event.ipAddress);
+    const uaInfo = parseUserAgent(event.userAgent || '');
     let sessionId = event.sessionId;
     if (!sessionId || event.eventType === 'session_start') {
       sessionId = generateSessionId();
@@ -292,6 +293,14 @@ export class TrackingService {
         siteId,
         ipHash,
         userAgent: event.userAgent,
+        deviceType: uaInfo.deviceType,
+        browser: uaInfo.browser,
+        os: uaInfo.os,
+        deviceFingerprint: event.metadata ? {
+          renderer: event.metadata.renderer,
+          hardwareConcurrency: event.metadata.hardwareConcurrency,
+          deviceMemory: event.metadata.deviceMemory
+        } : undefined,
         referrer: event.referrer,
         utmParams: event.utmParams ? Object.entries(event.utmParams).map(([k, v]) => `${k}=${v}`) : [],
         startedAt: new Date(),

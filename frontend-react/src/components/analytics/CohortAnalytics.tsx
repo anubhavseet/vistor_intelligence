@@ -6,13 +6,33 @@ import { cn } from '@/lib/utils';
 
 const GET_COHORT_RETENTION = gql`
   query GetCohortRetention($siteId: String!, $startDate: DateTime!, $endDate: DateTime!) {
-    cohortRetention(siteId: $siteId, startDate: $startDate, endDate: $endDate)
+    getCohortRetention(siteId: $siteId, startDate: $startDate, endDate: $endDate) {
+      cohortId
+      firstSeen
+      visitorCount
+      avgIntentScore
+      conversionRate
+      retention {
+        day1
+        day7
+        day30
+      }
+    }
   }
 `;
 
 const GET_VISITOR_LIFECYCLE = gql`
   query GetVisitorLifecycle($siteId: String!) {
-    visitorLifecycle(siteId: $siteId)
+    getVisitorLifecycle(siteId: $siteId) {
+      total
+      stages {
+        stage
+        count
+        avgSessionCount
+        avgIntentScore
+        avgTimeSpent
+      }
+    }
   }
 `;
 
@@ -21,7 +41,7 @@ interface CohortAnalyticsProps {
 }
 
 interface CohortRetentionData {
-    cohortRetention: any; // It returns a JSON string or object depending on scalar
+    getCohortRetention: any[];
 }
 
 interface CohortRetentionVars {
@@ -31,7 +51,7 @@ interface CohortRetentionVars {
 }
 
 interface VisitorLifecycleData {
-    visitorLifecycle: any;
+    getVisitorLifecycle: any;
 }
 
 interface VisitorLifecycleVars {
@@ -69,8 +89,8 @@ export const CohortAnalytics: React.FC<CohortAnalyticsProps> = ({ siteId }) => {
         );
     }
 
-    const cohorts = cohortData?.cohortRetention ? JSON.parse(cohortData.cohortRetention) : [];
-    const lifecycle = lifecycleData?.visitorLifecycle ? JSON.parse(lifecycleData.visitorLifecycle) : null;
+    const cohorts = cohortData?.getCohortRetention ?? [];
+    const lifecycle = lifecycleData?.getVisitorLifecycle ?? null;
 
     // Calculate average retention rates
     const avgRetention = cohorts.length > 0 ? {

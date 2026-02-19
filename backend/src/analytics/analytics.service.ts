@@ -4,7 +4,11 @@ import { Model } from 'mongoose';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
 import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schema';
-import { AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat, PageSection, SectionMetric, TopInteraction, CustomEventStat, CityStat, AreaStats } from './dto/analytics.types';
+import {
+  OverviewStats, ReferrerStat, GeoStat, PageStat, DailyStat, HeatMapPoint,
+  AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat,
+  TopInteraction, CustomEventStat, PageSection, SectionMetric, CityStat, AreaStats, UtmCampaignStat, DeviceStat
+} from './dto/analytics.types';
 import { QdrantService } from '../qdrant/qdrant.service';
 
 @Injectable()
@@ -320,43 +324,60 @@ export class AnalyticsService {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const pipeline = [
+    // Bug #8 fix: All computation moved into MongoDB aggregation.
+    // Previously this loaded all sessions into Node.js memory and built a Map —
+    // dangerous at scale. Now the page-pair generation runs inside the DB.
+    const pipeline: any[] = [
       {
         $match: {
           siteId,
           startedAt: { $gte: startDate },
-          'pagesVisited.1': { $exists: true } // At least 2 pages
-        }
+          'pagesVisited.1': { $exists: true }, // At least 2 pages
+        },
+      },
+      // Create an array of [source, target] pairs for consecutive pages
+      {
+        $addFields: {
+          pagePairs: {
+            $map: {
+              input: { $range: [0, { $subtract: [{ $size: '$pagesVisited' }, 1] }] },
+              as: 'idx',
+              in: {
+                source: { $arrayElemAt: ['$pagesVisited', '$$idx'] },
+                target: { $arrayElemAt: ['$pagesVisited', { $add: ['$$idx', 1] }] },
+              },
+            },
+          },
+        },
+      },
+      { $unwind: '$pagePairs' },
+      // Exclude self-loops and null values
+      {
+        $match: {
+          'pagePairs.source': { $exists: true, $nin: [null, ''] },
+          'pagePairs.target': { $exists: true, $nin: [null, ''] },
+          $expr: { $ne: ['$pagePairs.source', '$pagePairs.target'] },
+        },
+      },
+      {
+        $group: {
+          _id: { source: '$pagePairs.source', target: '$pagePairs.target' },
+          count: { $sum: 1 },
+        },
       },
       {
         $project: {
-          pagesVisited: 1
-        }
-      }
+          source: '$_id.source',
+          target: '$_id.target',
+          count: 1,
+          _id: 0,
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 15 },
     ];
 
-    const sessions = await this.visitorSessionModel.aggregate(pipeline);
-    const flowMap = new Map<string, number>();
-
-    sessions.forEach(session => {
-      const pages = session.pagesVisited;
-      for (let i = 0; i < pages.length - 1; i++) {
-        const source = pages[i];
-        const target = pages[i + 1];
-        if (source && target && source !== target) {
-          const key = `${source}|${target}`;
-          flowMap.set(key, (flowMap.get(key) || 0) + 1);
-        }
-      }
-    });
-
-    const flows: UserFlowStat[] = [];
-    flowMap.forEach((count, key) => {
-      const [source, target] = key.split('|');
-      flows.push({ source, target, count });
-    });
-
-    return flows.sort((a, b) => b.count - a.count).slice(0, 15);
+    return this.visitorSessionModel.aggregate(pipeline);
   }
 
   async getBehavioralPatterns(siteId: string, days: number): Promise<BehavioralPatternStat[]> {
@@ -634,5 +655,189 @@ export class AnalyticsService {
     });
 
     return [header, ...rows].join('\n');
+  }
+
+  /**
+   * Get device and technology statistics
+   */
+  async getDeviceStats(siteId: string, days: number): Promise<DeviceStat[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const pipeline: any[] = [
+      {
+        $match: {
+          siteId,
+          startedAt: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            deviceType: { $ifNull: ['$deviceType', 'desktop'] },
+            browser: { $ifNull: ['$browser', 'Unknown'] },
+          },
+          visitors: { $sum: 1 },
+          avgIntentScore: { $avg: '$intentScore' },
+        },
+      },
+      {
+        $project: {
+          deviceType: '$_id.deviceType',
+          browser: '$_id.browser',
+          visitors: 1,
+          avgIntentScore: { $round: ['$avgIntentScore', 1] },
+          _id: 0,
+        },
+      },
+      { $sort: { visitors: -1 } },
+    ];
+
+    return this.visitorSessionModel.aggregate(pipeline);
+  }
+
+  /**
+   * Get UTM Campaign Attribution Stats
+   * Parses the `utmParams` array of strings (e.g., ["utm_source=google", "utm_campaign=summer_sale"])
+   */
+  async getUtmCampaigns(siteId: string, days: number): Promise<UtmCampaignStat[]> {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // This pipeline extracts source/medium/campaign using regex from string array
+    const pipeline: any[] = [
+      {
+        $match: {
+          siteId,
+          startedAt: { $gte: startDate },
+          utmParams: { $exists: true, $ne: [] },
+        },
+      },
+      {
+        $addFields: {
+          source: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$utmParams',
+                      as: 'p',
+                      cond: { $regexMatch: { input: '$$p', regex: /utm_source=/ } },
+                    },
+                  },
+                  as: 'm',
+                  in: { $substrCP: ['$$m', 11, { $strLenCP: '$$m' }] },
+                },
+              },
+              0,
+            ],
+          },
+          medium: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$utmParams',
+                      as: 'p',
+                      cond: { $regexMatch: { input: '$$p', regex: /utm_medium=/ } },
+                    },
+                  },
+                  as: 'm',
+                  in: { $substrCP: ['$$m', 11, { $strLenCP: '$$m' }] },
+                },
+              },
+              0,
+            ],
+          },
+          campaign: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$utmParams',
+                      as: 'p',
+                      cond: { $regexMatch: { input: '$$p', regex: /utm_campaign=/ } },
+                    },
+                  },
+                  as: 'm',
+                  in: { $substrCP: ['$$m', 13, { $strLenCP: '$$m' }] },
+                },
+              },
+              0,
+            ],
+          },
+          isNewVisitor: { $lt: ['$sessionCount', 2] },
+          isBounce: { $eq: [{ $size: '$pagesVisited' }, 1] },
+          converted: { $gte: ['$intentScore', 70] },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            source: { $ifNull: ['$source', '(direct)'] },
+            medium: { $ifNull: ['$medium', '(none)'] },
+            campaign: { $ifNull: ['$campaign', '(not set)'] },
+          },
+          visitors: { $sum: 1 },
+          newVisitors: { $sum: { $cond: ['$isNewVisitor', 1, 0] } },
+          bounces: { $sum: { $cond: ['$isBounce', 1, 0] } },
+          totalTimeSpent: { $sum: '$totalTimeSpent' },
+          conversionCount: { $sum: { $cond: ['$converted', 1, 0] } },
+        },
+      },
+      {
+        $project: {
+          source: '$_id.source',
+          medium: '$_id.medium',
+          campaign: '$_id.campaign',
+          visitors: 1,
+          newVisitors: 1,
+          bounceRate: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: ['$visitors', 0] },
+                  { $multiply: [{ $divide: ['$bounces', '$visitors'] }, 100] },
+                  0,
+                ],
+              },
+              1,
+            ],
+          },
+          avgTimeSpent: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: ['$visitors', 0] },
+                  { $divide: ['$totalTimeSpent', '$visitors'] },
+                  0,
+                ],
+              },
+              1,
+            ],
+          },
+          conversionRate: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: ['$visitors', 0] },
+                  { $multiply: [{ $divide: ['$conversionCount', '$visitors'] }, 100] },
+                  0,
+                ],
+              },
+              1,
+            ],
+          },
+          _id: 0,
+        },
+      },
+      { $match: { visitors: { $gt: 0 } } },
+      { $sort: { visitors: -1 } },
+    ];
+
+    return this.visitorSessionModel.aggregate(pipeline);
   }
 }
