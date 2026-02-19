@@ -1,4 +1,5 @@
 import { gql } from '@apollo/client'
+import { IntentCategory } from '../enums'
 
 // ============================================
 // QUERIES
@@ -23,6 +24,11 @@ export const GET_SITES = gql`
         dataRetentionDays
         trackingStartDelay
         usePreGeneratedIntentUI
+        isUiInjectionEnabled
+        maxInjectionsPerIntent {
+          intent
+          limit
+        }
       }
       apiKey
       createdAt
@@ -48,6 +54,11 @@ export const GET_SITE = gql`
         dataRetentionDays
         trackingStartDelay
         usePreGeneratedIntentUI
+        isUiInjectionEnabled
+        maxInjectionsPerIntent {
+          intent
+          limit
+        }
       }
       apiKey
       createdAt
@@ -73,6 +84,11 @@ export const CREATE_SITE = gql`
         dataRetentionDays
         trackingStartDelay
         usePreGeneratedIntentUI
+        isUiInjectionEnabled
+        maxInjectionsPerIntent {
+          intent
+          limit
+        }
       }
       apiKey
       createdAt
@@ -98,6 +114,11 @@ export const UPDATE_SITE = gql`
         dataRetentionDays
         trackingStartDelay
         usePreGeneratedIntentUI
+        isUiInjectionEnabled
+        maxInjectionsPerIntent {
+          intent
+          limit
+        }
       }
       apiKey
       createdAt
@@ -129,6 +150,11 @@ export const REGENERATE_API_KEY = gql`
         dataRetentionDays
         trackingStartDelay
         usePreGeneratedIntentUI
+        isUiInjectionEnabled
+        maxInjectionsPerIntent {
+          intent
+          limit
+        }
       }
       apiKey
       createdAt
@@ -154,6 +180,8 @@ export interface SiteSettings {
   dataRetentionDays: number
   trackingStartDelay: number
   usePreGeneratedIntentUI: boolean
+  isUiInjectionEnabled: boolean
+  maxInjectionsPerIntent: { intent: IntentCategory | string; limit: number }[]
 }
 
 export interface UpdateSiteSettings {
@@ -163,6 +191,8 @@ export interface UpdateSiteSettings {
   dataRetentionDays?: number
   trackingStartDelay?: number
   usePreGeneratedIntentUI?: boolean
+  isUiInjectionEnabled?: boolean
+  maxInjectionsPerIntent?: { intent: IntentCategory | string; limit: number }[]
 }
 
 

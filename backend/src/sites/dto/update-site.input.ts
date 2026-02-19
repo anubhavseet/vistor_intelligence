@@ -1,6 +1,18 @@
 import { InputType, Field } from '@nestjs/graphql';
-import { IsString, IsOptional, IsBoolean, IsArray, IsNumber, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsArray, IsNumber, ValidateNested, IsEnum } from 'class-validator';
+import { IntentCategory } from '../../common/enums/intent.enum';
 import { Type } from 'class-transformer';
+
+@InputType()
+export class IntentLimitInput {
+  @Field(() => IntentCategory)
+  @IsEnum(IntentCategory)
+  intent: IntentCategory;
+
+  @Field()
+  @IsNumber()
+  limit: number;
+}
 
 @InputType()
 export class UpdateSiteSettingsInput {
@@ -33,6 +45,17 @@ export class UpdateSiteSettingsInput {
   @IsOptional()
   @IsBoolean()
   usePreGeneratedIntentUI?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  isUiInjectionEnabled?: boolean;
+
+  @Field(() => [IntentLimitInput], { nullable: true })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => IntentLimitInput)
+  maxInjectionsPerIntent?: IntentLimitInput[];
 }
 
 @InputType()

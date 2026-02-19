@@ -26,6 +26,7 @@ import {
     Wand2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { IntentCategory } from '@/lib/enums'
 
 export default function IntentPromptsPage() {
     const { siteId } = useParams<{ siteId: string }>()
@@ -35,7 +36,7 @@ export default function IntentPromptsPage() {
 
     // Form State
     const [formData, setFormData] = useState({
-        intent: 'high_intent',
+        intent: IntentCategory.HIGH_INTENT,
         prompt: '',
         description: '',
         generatedHtml: '',
@@ -94,7 +95,7 @@ export default function IntentPromptsPage() {
 
     const resetForm = () => {
         setFormData({
-            intent: 'high_intent',
+            intent: IntentCategory.HIGH_INTENT,
             prompt: '',
             description: '',
             generatedHtml: '',
@@ -144,7 +145,7 @@ export default function IntentPromptsPage() {
     const startEdit = (prompt: IntentPrompt) => {
         setEditingId(prompt.id)
         setFormData({
-            intent: prompt.intent,
+            intent: prompt.intent as IntentCategory,
             prompt: prompt.prompt,
             description: prompt.description || '',
             generatedHtml: prompt.generatedHtml || '',
@@ -388,14 +389,14 @@ export default function IntentPromptsPage() {
                                 <label className="block text-sm font-medium mb-1">Intent Category</label>
                                 <select
                                     value={formData.intent}
-                                    onChange={(e) => setFormData({ ...formData, intent: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, intent: e.target.value as IntentCategory })}
                                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
-                                    <option value="high_intent">High Intent (Lead)</option>
-                                    <option value="bounce_risk">Bounce Risk</option>
-                                    <option value="hesitation">Hesitation / Confusion</option>
-                                    <option value="researcher">Researcher (Deep Reader)</option>
-                                    <option value="custom">Custom Intent</option>
+                                    {Object.values(IntentCategory).map((category) => (
+                                        <option key={category} value={category}>
+                                            {category.toLowerCase().replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
                             <div>

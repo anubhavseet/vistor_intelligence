@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { IntentCategory } from '../enums/intent.enum';
 
 export type SiteDocument = Site & Document;
 
@@ -36,6 +37,8 @@ export class Site {
       dataRetentionDays: Number,
       trackingStartDelay: Number,
       usePreGeneratedIntentUI: Boolean,
+      isUiInjectionEnabled: Boolean,
+      maxInjectionsPerIntent: [{ intent: { type: String, enum: Object.values(IntentCategory) }, limit: Number }],
     },
     default: {
       enableTracking: true,
@@ -44,6 +47,13 @@ export class Site {
       dataRetentionDays: 90,
       trackingStartDelay: 0,
       usePreGeneratedIntentUI: false,
+      isUiInjectionEnabled: true,
+      maxInjectionsPerIntent: [
+        { intent: IntentCategory.HIGH_INTENT, limit: 3 },
+        { intent: IntentCategory.HESITATION, limit: 2 },
+        { intent: IntentCategory.BOUNCE_RISK, limit: 1 },
+        { intent: IntentCategory.RESEARCHER, limit: 2 }
+      ],
     },
   })
   settings: {
@@ -53,6 +63,8 @@ export class Site {
     dataRetentionDays: number;
     trackingStartDelay: number;
     usePreGeneratedIntentUI: boolean;
+    isUiInjectionEnabled: boolean;
+    maxInjectionsPerIntent: { intent: IntentCategory | string; limit: number }[];
   };
 
   @Prop()

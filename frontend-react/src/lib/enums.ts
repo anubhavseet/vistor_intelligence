@@ -1,0 +1,7 @@
+export enum IntentCategory {
+    HIGH_INTENT = 'HIGH_INTENT',
+    BOUNCE_RISK = 'BOUNCE_RISK',
+    HESITATION = 'HESITATION',
+    RESEARCHER = 'RESEARCHER',
+    GENERAL = 'GENERAL',
+}

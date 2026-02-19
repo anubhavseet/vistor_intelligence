@@ -1,4 +1,5 @@
 import { gql } from '@apollo/client'
+import { IntentCategory } from '../enums'
 
 export const GET_INTENT_PROMPTS = gql`
   query GetIntentPrompts($siteId: String!) {
@@ -69,7 +70,7 @@ export const GENERATE_PROMPT_PREVIEW = gql`
 export interface IntentPrompt {
   id: string
   siteId: string
-  intent: string
+  intent: IntentCategory
   prompt: string
   description?: string
   generatedHtml?: string
@@ -82,7 +83,7 @@ export interface IntentPrompt {
 
 export interface CreateIntentPromptInput {
   siteId: string
-  intent: string
+  intent: IntentCategory
   prompt: string
   description?: string
   isActive?: boolean
@@ -90,7 +91,7 @@ export interface CreateIntentPromptInput {
 
 export interface UpdateIntentPromptInput {
   id: string
-  intent?: string
+  intent?: IntentCategory
   prompt?: string
   description?: string
   generatedHtml?: string

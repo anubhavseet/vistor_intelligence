@@ -1,4 +1,5 @@
 import { ObjectType, Field, ID } from '@nestjs/graphql';
+import { IntentCategory } from '../../common/enums/intent.enum';
 
 @ObjectType()
 export class IntentPrompt {
@@ -8,8 +9,8 @@ export class IntentPrompt {
     @Field()
     siteId: string;
 
-    @Field()
-    intent: string;
+    @Field(() => IntentCategory)
+    intent: IntentCategory;
 
     @Field()
     prompt: string;

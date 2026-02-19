@@ -1,4 +1,5 @@
 import { Resolver, Query, Mutation, Args } from '@nestjs/graphql';
+import { IntentCategory } from '../common/enums/intent.enum';
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { IntentPromptsService } from './intent-prompts.service';
@@ -33,7 +34,7 @@ export class IntentPromptsResolver {
     @Mutation(() => IntentPreview)
     async generatePromptPreview(
         @Args('siteId') siteId: string,
-        @Args('intent') intent: string,
+        @Args('intent', { type: () => IntentCategory }) intent: IntentCategory,
         @Args('prompt') prompt: string
     ) {
         return this.intentPromptsService.generatePreview(siteId, intent, prompt);

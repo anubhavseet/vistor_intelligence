@@ -13,10 +13,18 @@
 
     // --- Configuration Constants ---
     const CONFIG = {
-        batchInterval: 5000, // Send accumulated signals every 5s
+        batchInterval: 5000,
         idleThreshold: 1000,
         maxRetries: 3,
-        startUpDelay: 1000
+        startUpDelay: 1000,
+        isUiInjectionEnabled: true,
+        maxInjectionsPerIntent: {
+            'low_intent': 3,
+            'medium_intent': 3,
+            'high_intent': 3,
+            'hesitation': 2,
+            'bounce_risk': 1
+        }
     };
 
     // --- GraphQL WebSocket Client ---
@@ -192,6 +200,7 @@
             this.activeDwellTimers = {};
             this.accumulatedDwell = {};
             this.formTimers = {};
+            this.injectionCounts = {};
 
             // Initialize
             this.bootstrap();
@@ -294,6 +303,18 @@
                             try {
                                 const settings = JSON.parse(config.settings);
                                 if (settings.trackingStartDelay) CONFIG.startUpDelay = settings.trackingStartDelay;
+                                if (typeof settings.isUiInjectionEnabled !== 'undefined') CONFIG.isUiInjectionEnabled = settings.isUiInjectionEnabled;
+                                if (settings.maxInjectionsPerIntent && Array.isArray(settings.maxInjectionsPerIntent)) {
+                                    // Convert array to object map
+                                    const limitMap = {};
+                                    settings.maxInjectionsPerIntent.forEach(item => {
+                                        limitMap[item.intent] = item.limit;
+                                    });
+                                    CONFIG.maxInjectionsPerIntent = limitMap;
+                                } else if (typeof settings.maxInjectionsPerIntent === 'number') {
+                                    // Fallback for legacy number format
+                                    CONFIG.maxInjectionsPerIntent = { 'general': settings.maxInjectionsPerIntent };
+                                }
                             } catch (e) { }
                         }
 
@@ -762,7 +783,30 @@
         // --- UI Injection (Shadow DOM) ---
         handleUIInjection(payload) {
             console.log('[Tracker] Received AI UI Payload', payload);
-            const { injection_target_selector, html_payload, scoped_css, javascript_payload } = payload;
+
+            if (!CONFIG.isUiInjectionEnabled) {
+                console.log('[Tracker] UI Injection disabled by site settings');
+                return;
+            }
+
+            const { injection_target_selector, html_payload, scoped_css, javascript_payload, intent } = payload;
+
+            // Check injection limits
+            const intentType = intent || 'general';
+            const currentCount = this.injectionCounts[intentType] || 0;
+
+            // Get limit for this specific intent, or default to 3 if not specified
+            // If checking against a "general" fallback if key not found:
+            let maxLimit = CONFIG.maxInjectionsPerIntent[intentType];
+            if (typeof maxLimit === 'undefined') {
+                // If not explicitly set for this intent, try 'general' or default to 3
+                maxLimit = CONFIG.maxInjectionsPerIntent['general'] || 3;
+            }
+
+            if (currentCount >= maxLimit) {
+                console.log(`[Tracker] Max injections reached for intent: ${intentType} (${currentCount}/${maxLimit})`);
+                return;
+            }
 
             if (document.getElementById('vi-ai-host')) return; // Already showing one?
 
@@ -835,6 +879,9 @@
             } else {
                 targetElement.appendChild(host);
             }
+
+            // Increment count
+            this.injectionCounts[intentType] = currentCount + 1;
 
             shadow.addEventListener('click', (e) => {
                 const target = e.target;

@@ -1,4 +1,14 @@
 import { ObjectType, Field } from '@nestjs/graphql';
+import { IntentCategory } from '../../common/enums/intent.enum';
+
+@ObjectType()
+export class IntentLimit {
+  @Field(() => IntentCategory)
+  intent: IntentCategory;
+
+  @Field()
+  limit: number;
+}
 
 @ObjectType()
 export class SiteSettings {
@@ -19,6 +29,12 @@ export class SiteSettings {
 
   @Field({ nullable: true, defaultValue: false })
   usePreGeneratedIntentUI: boolean;
+
+  @Field({ nullable: true, defaultValue: true })
+  isUiInjectionEnabled: boolean;
+
+  @Field(() => [IntentLimit], { nullable: true, defaultValue: [] })
+  maxInjectionsPerIntent: IntentLimit[];
 }
 
 @ObjectType()

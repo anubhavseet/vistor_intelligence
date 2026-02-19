@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { IntentCategory } from '../../common/enums/intent.enum';
 
 export type IntentPromptDocument = IntentPrompt & Document;
 
@@ -8,8 +9,8 @@ export class IntentPrompt {
     @Prop({ required: true, index: true })
     siteId: string;
 
-    @Prop({ required: true })
-    intent: string; // e.g., 'high_intent', 'bounce_risk', 'hesitation'
+    @Prop({ required: true, enum: Object.values(IntentCategory) })
+    intent: string;
 
     @Prop({ required: true })
     prompt: string; // The system prompt instruction for the AI

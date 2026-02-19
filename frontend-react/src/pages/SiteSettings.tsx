@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useSite } from '@/hooks/use-sites'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
+import { IntentCategory } from '@/lib/enums'
 
 import {
     Save,
@@ -42,6 +43,8 @@ export default function SiteSettingsPage() {
     const [dataRetentionDays, setDataRetentionDays] = useState(90)
     const [trackingStartDelay, setTrackingStartDelay] = useState(0)
     const [usePreGeneratedIntentUI, setUsePreGeneratedIntentUI] = useState(false)
+    const [isUiInjectionEnabled, setIsUiInjectionEnabled] = useState(true)
+    const [maxInjectionsPerIntent, setMaxInjectionsPerIntent] = useState<{ intent: IntentCategory | string, limit: number }[]>([])
 
     const [showApiKey, setShowApiKey] = useState(false)
     const [copiedApiKey, setCopiedApiKey] = useState(false)
@@ -68,6 +71,16 @@ export default function SiteSettingsPage() {
             setDataRetentionDays(site.settings.dataRetentionDays)
             setTrackingStartDelay(site.settings.trackingStartDelay || 0)
             setUsePreGeneratedIntentUI(site.settings.usePreGeneratedIntentUI || false)
+            setIsUiInjectionEnabled(site.settings.isUiInjectionEnabled ?? true)
+            // Ensure we handle legacy number format if API returns it, though updated API should return array
+            const limits = site.settings.maxInjectionsPerIntent;
+            if (Array.isArray(limits)) {
+                setMaxInjectionsPerIntent(limits.map(l => ({ intent: l.intent, limit: l.limit })));
+            } else if (typeof limits === 'number') {
+                setMaxInjectionsPerIntent([{ intent: IntentCategory.GENERAL, limit: limits }]);
+            } else {
+                setMaxInjectionsPerIntent([{ intent: IntentCategory.HIGH_INTENT, limit: 3 }, { intent: IntentCategory.HESITATION, limit: 2 }]);
+            }
         }
     }, [site])
 
@@ -112,7 +125,9 @@ export default function SiteSettingsPage() {
                     enableBehaviorTracking,
                     dataRetentionDays,
                     trackingStartDelay,
-                    usePreGeneratedIntentUI
+                    usePreGeneratedIntentUI,
+                    isUiInjectionEnabled,
+                    maxInjectionsPerIntent
                 }
             })
             toast.success('Site updated successfully!')
@@ -172,6 +187,26 @@ export default function SiteSettingsPage() {
         navigator.clipboard.writeText(site.apiKey || '')
         setCopiedApiKey(true)
         setTimeout(() => setCopiedApiKey(false), 2000)
+    }
+
+    const handleAddIntentLimit = () => {
+        setMaxInjectionsPerIntent([...maxInjectionsPerIntent, { intent: IntentCategory.GENERAL, limit: 1 }]);
+    }
+
+    const handleRemoveIntentLimit = (index: number) => {
+        const newLimits = [...maxInjectionsPerIntent];
+        newLimits.splice(index, 1);
+        setMaxInjectionsPerIntent(newLimits);
+    }
+
+    const handleUpdateIntentLimit = (index: number, field: 'intent' | 'limit', value: string | number) => {
+        const newLimits = [...maxInjectionsPerIntent];
+        if (field === 'limit') {
+            newLimits[index].limit = typeof value === 'string' ? parseInt(value) || 0 : value;
+        } else {
+            newLimits[index].intent = value as IntentCategory;
+        }
+        setMaxInjectionsPerIntent(newLimits);
     }
 
     return (
@@ -472,6 +507,77 @@ export default function SiteSettingsPage() {
                                         )}
                                     />
                                 </button>
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 rounded-md border bg-muted/30">
+                                <div className="flex items-center space-x-3">
+                                    <Activity className="w-4 h-4 text-indigo-500" />
+                                    <div>
+                                        <div className="font-medium">Enable UI Injection</div>
+                                        <div className="text-sm text-muted-foreground">Allow the tracker to inject UI elements (e.g. intent prompts)</div>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsUiInjectionEnabled(!isUiInjectionEnabled)}
+                                    className={cn(
+                                        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                                        isUiInjectionEnabled ? 'bg-primary' : 'bg-muted-foreground'
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                                            isUiInjectionEnabled ? 'translate-x-6' : 'translate-x-1'
+                                        )}
+                                    />
+                                </button>
+                            </div>
+
+                            <div className="p-3 rounded-md border bg-muted/30">
+                                <div className="flex items-center space-x-3 mb-3">
+                                    <Database className="w-4 h-4 text-rose-500" />
+                                    <div>
+                                        <div className="font-medium">Max Injections Per Intent</div>
+                                        <div className="text-sm text-muted-foreground">Define maximum injections for specific intent types</div>
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    {maxInjectionsPerIntent.map((item, idx) => (
+                                        <div key={idx} className="flex items-center space-x-2">
+                                            <select
+                                                value={item.intent}
+                                                onChange={(e) => handleUpdateIntentLimit(idx, 'intent', e.target.value)}
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {Object.values(IntentCategory).map((category) => (
+                                                    <option key={category} value={category}>
+                                                        {category.toLowerCase().replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="50"
+                                                value={item.limit}
+                                                onChange={(e) => handleUpdateIntentLimit(idx, 'limit', e.target.value)}
+                                                className="flex h-9 w-20 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                            />
+                                            <button
+                                                onClick={() => handleRemoveIntentLimit(idx)}
+                                                className="p-2 text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={handleAddIntentLimit}
+                                        className="text-sm text-primary hover:underline flex items-center mt-2"
+                                    >
+                                        <Plus className="w-3 h-3 mr-1" /> Add Intent Limit
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

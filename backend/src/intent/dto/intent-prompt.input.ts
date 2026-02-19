@@ -1,5 +1,6 @@
 import { InputType, Field } from '@nestjs/graphql';
-import { IsString, IsBoolean, IsOptional } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsEnum } from 'class-validator';
+import { IntentCategory } from '../../common/enums/intent.enum';
 
 @InputType()
 export class CreateIntentPromptInput {
@@ -7,9 +8,9 @@ export class CreateIntentPromptInput {
     @IsString()
     siteId: string;
 
-    @Field()
-    @IsString()
-    intent: string;
+    @Field(() => IntentCategory)
+    @IsEnum(IntentCategory)
+    intent: IntentCategory;
 
     @Field()
     @IsString()
@@ -32,10 +33,10 @@ export class UpdateIntentPromptInput {
     @IsString()
     id: string;
 
-    @Field({ nullable: true })
+    @Field(() => IntentCategory, { nullable: true })
     @IsOptional()
-    @IsString()
-    intent?: string;
+    @IsEnum(IntentCategory)
+    intent?: IntentCategory;
 
     @Field({ nullable: true })
     @IsOptional()

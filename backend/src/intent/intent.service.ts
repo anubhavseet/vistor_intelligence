@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { IntentCategory } from '../common/enums/intent.enum';
 import { Account } from '../common/schemas/account.schema';
 import { GeminiService } from '../ai-generation/gemini.service';
 import { QdrantService } from '../qdrant/qdrant.service';
@@ -62,11 +63,11 @@ export class IntentService {
     const isHesitating = signals.hesitation_event;
 
     // Determine mapping to IntentPrompt keys
-    let intentKey = null;
-    if (exitIntent) intentKey = 'bounce_risk';
-    else if (isHesitating) intentKey = 'hesitation';
-    else if (category === 'Lead') intentKey = 'high_intent';
-    else if (category === 'Researcher') intentKey = 'researcher';
+    let intentKey: IntentCategory | null = null;
+    if (exitIntent) intentKey = IntentCategory.BOUNCE_RISK;
+    else if (isHesitating) intentKey = IntentCategory.HESITATION;
+    else if (category === 'Lead') intentKey = IntentCategory.HIGH_INTENT;
+    else if (category === 'Researcher') intentKey = IntentCategory.RESEARCHER;
 
     // Check if we should trigger based on having a valid intent key or existing logic
     const shouldTriggerAi = intentKey || (category === 'Lead') || (suggestedAction !== null);
@@ -195,6 +196,10 @@ export class IntentService {
       } catch (e) {
         this.logger.error('Failed to generate AI UI', e);
       }
+    }
+
+    if (uiPayload && intentKey) {
+      uiPayload.intent = intentKey;
     }
 
     return { score, category, suggestedAction, uiPayload };

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { IntentCategory } from '../common/enums/intent.enum';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { IntentPrompt, IntentPromptDocument } from './schemas/intent-prompt.schema';
@@ -88,11 +89,11 @@ export class IntentPromptsService {
     }
 
     // Helper for IntentService to get active prompt for an intent
-    async getPromptForIntent(siteId: string, intent: string): Promise<IntentPrompt | null> {
+    async getPromptForIntent(siteId: string, intent: IntentCategory | string): Promise<IntentPrompt | null> {
         return this.intentPromptModel.findOne({ siteId, intent, isActive: true }).exec();
     }
 
-    async generatePreview(siteId: string, intent: string, prompt: string): Promise<{ html: string, css: string, js: string }> {
+    async generatePreview(siteId: string, intent: IntentCategory, prompt: string): Promise<{ html: string, css: string, js: string }> {
         // Fetch context for style adaptation
         const embedding = await this.geminiService.generateEmbedding(`Generate context for ${intent} based on this instruction: ${prompt}`);
         const filters = { must: [{ key: "siteId", match: { value: siteId } }] };
