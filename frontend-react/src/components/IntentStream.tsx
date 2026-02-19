@@ -156,7 +156,7 @@ export default function IntentStream({ siteId }: { siteId: string }) {
 
     const sessions = Array.from(sessionMap.values())
         .filter(s => s.isActive !== false)
-        .sort((a, b) => b.intentScore - a.intentScore);
+        .sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
 
 
 
@@ -296,14 +296,29 @@ function SessionCard({ session, onClick }: { session: any, onClick: () => void }
                         {session.pagesVisited[session.pagesVisited.length - 1] || "Land"}
                     </span>
                 </div>
+
+                <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                    <Monitor className="w-3.5 h-3.5" />
+                    <span className="truncate">
+                        {session.deviceType || 'Unknown'} /{session.browser || 'Browser'} /{session.os || 'OS'}
+                    </span>
+                </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
-                <span className="font-mono">{session.sessionId.slice(0, 8)}</span>
-                <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(session.lastActivityAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+            <div className="mt-4 pt-3 border-t flex flex-col gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] break-all">{session.sessionId}</span>
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                    <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(session.lastActivityAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <Activity className="w-3 h-3" />
+                        {session.totalPageViews || 1} Views
+                    </span>
+                </div>
             </div>
         </motion.div>
     );
@@ -382,28 +397,28 @@ function SessionDetailPanel({ session, onClose }: { session: any, onClose: () =>
 
                         {/* Device Fingerprint Details */}
                         {session.deviceFingerprint && (
-                            <div className="flex flex-col py-2 border-b border-border/50 gap-1">
-                                <span className="text-muted-foreground flex items-center gap-2 text-xs">
+                            <div className="flex flex-col py-3 border-b border-border/50 gap-2">
+                                <span className="text-muted-foreground flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
                                     <Shield className="w-3 h-3" /> Hardware Fingerprint
                                 </span>
-                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                <div className="grid grid-cols-1 gap-2 mt-1">
                                     {session.deviceFingerprint.renderer && (
-                                        <div className="bg-muted p-1.5 rounded text-[10px] font-mono truncate" title={session.deviceFingerprint.renderer}>
-                                            <span className="opacity-50 block text-[9px]">GPU</span>
-                                            {session.deviceFingerprint.renderer}
+                                        <div className="bg-muted p-2 rounded-md border border-border/50 text-xs font-mono" title={session.deviceFingerprint.renderer}>
+                                            <span className="text-[10px] text-muted-foreground uppercase mb-0.5 block">Graphic Renderer (GPU)</span>
+                                            <span className="truncate block">{session.deviceFingerprint.renderer}</span>
                                         </div>
                                     )}
-                                    <div className="flex gap-2">
+                                    <div className="grid grid-cols-2 gap-2">
                                         {session.deviceFingerprint.hardwareConcurrency && (
-                                            <div className="bg-muted p-1.5 rounded text-[10px] font-mono flex-1">
-                                                <span className="opacity-50 block text-[9px]">CORES</span>
-                                                {session.deviceFingerprint.hardwareConcurrency}
+                                            <div className="bg-muted p-2 rounded-md border border-border/50 text-xs font-mono">
+                                                <span className="text-[10px] text-muted-foreground uppercase mb-0.5 block">CPU Cores</span>
+                                                <span className="font-bold">{session.deviceFingerprint.hardwareConcurrency} Logical Cores</span>
                                             </div>
                                         )}
                                         {session.deviceFingerprint.deviceMemory && (
-                                            <div className="bg-muted p-1.5 rounded text-[10px] font-mono flex-1">
-                                                <span className="opacity-50 block text-[9px]">RAM</span>
-                                                {session.deviceFingerprint.deviceMemory}GB
+                                            <div className="bg-muted p-2 rounded-md border border-border/50 text-xs font-mono">
+                                                <span className="text-[10px] text-muted-foreground uppercase mb-0.5 block">System RAM</span>
+                                                <span className="font-bold">~{session.deviceFingerprint.deviceMemory} GB</span>
                                             </div>
                                         )}
                                     </div>

@@ -12,7 +12,7 @@ export function parseUserAgent(userAgent: string): UserAgentInfo {
     let deviceType: 'Desktop' | 'Mobile' | 'Tablet' = 'Desktop';
     if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
         deviceType = 'Tablet';
-    } else if (/Mobile|iP(hone|od)|Android|BlackBerry|IEMobile|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
+    } else if (/Mobile|iP(hone|od)|Android|BlackBerry|IEMobile|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/i.test(ua)) {
         deviceType = 'Mobile';
     }
 

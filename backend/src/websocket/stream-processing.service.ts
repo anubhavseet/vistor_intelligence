@@ -317,16 +317,26 @@ export class StreamProcessingService {
         }
 
         // --- Pages Visited & Page Views ---
+        let isNewPage = false;
         if (batch.url && !session.pagesVisited.includes(batch.url)) {
             session.pagesVisited.push(batch.url);
+            isNewPage = true;
         }
 
         // Check for explicit page_view events to increment count
         if (batch.events && batch.events.some((e: any) => e.type === 'page_view')) {
             session.totalPageViews = (session.totalPageViews || 0) + 1;
+        } else if (isNewPage) {
+            // Implicit increment for new unique page if explicit event missing
+            session.totalPageViews = (session.totalPageViews || 0) + 1;
         } else if (session.totalPageViews === 0 && batch.url) {
             // Fallback for initial sessions
             session.totalPageViews = 1;
+        }
+
+        // Safety: totalPageViews should be at least the number of unique pages visited
+        if (session.totalPageViews < session.pagesVisited.length) {
+            session.totalPageViews = session.pagesVisited.length;
         }
 
         // --- Total Time Spent (use max dwell = actual wall-clock time) ---
