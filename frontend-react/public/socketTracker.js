@@ -259,6 +259,13 @@
             return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
 
+        generateVisitorId() {
+            const id = 'user_' + Math.random().toString(36).substr(2, 9);
+            this.setStorage('vi_user_id', id);
+            this.userId = id;
+            return id;
+        }
+
         async bootstrap() {
             console.log(`[Tracker] Initializing for Site: ${this.siteId}`);
             try {
@@ -511,17 +518,24 @@
                 payloadData.metadata = this.getMetadata();
             }
 
+            // Defensive: always re-read visitorId from storage to avoid null/undefined
+            // (this.userId may not be set if class context was lost or storage was late)
+            const visitorId = this.userId || this.getStorage('vi_user_id') || this.generateVisitorId();
+            if (!this.userId) {
+                this.userId = visitorId;
+                this.setStorage('vi_user_id', visitorId);
+            }
+
             const event = {
                 siteId: this.siteId,
                 sessionId: this.sessionId,
                 eventType,
                 data: JSON.stringify(payloadData),
                 timestamp: Date.now(),
-                visitorId: this.userId
+                visitorId: visitorId
             };
 
-            // Ensure data is always a JSON string as per GraphQL schema
-            // event.data is already stringified above.
+            console.log('[Tracker] Sending event, visitorId:', visitorId, 'sessionId:', this.sessionId);
 
             if (this.isOnline) {
                 this.sendEventToBackend(event).catch(err => {
