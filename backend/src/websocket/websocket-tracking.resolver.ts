@@ -32,7 +32,7 @@ export class WebSocketTrackingResolver {
     ): Promise<TrackingEventResponse> {
         try {
             const { siteId, sessionId, eventType, timestamp, visitorId } = input;
-
+            console.log(visitorId, sessionId)
             // Parse data if it's a JSON string to ensure proper storage format in MongoDB
             let data: any = input.data;
             try {
@@ -67,7 +67,7 @@ export class WebSocketTrackingResolver {
                 // Try to extract metadata from data if possible (e.g. from pageview or signals)
                 let metadata = null;
                 if (data && data.metadata) metadata = data.metadata;
-
+                console.log(visitorId, sessionId)
                 await this.streamProcessor.initPersistentSession(
                     sessionId,
                     siteId,

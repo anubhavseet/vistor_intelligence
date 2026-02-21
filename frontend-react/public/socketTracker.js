@@ -177,7 +177,12 @@
 
             this.wsUrl = wsUrl;
             this.sessionId = this.getStorage('vi_session_id');
-            this.userId = this.getStorage('vi_user_id') || `user_${Math.random().toString(36).substr(2, 9)}`;
+            this.userId = this.getStorage('vi_user_id');
+
+            if (!this.userId) {
+                this.userId = `user_${Math.random().toString(36).substr(2, 9)}`;
+                this.setStorage('vi_user_id', this.userId);
+            }
 
             // Check for session timeout (30 mins)
             const lastActivity = this.getStorage('vi_last_activity');
