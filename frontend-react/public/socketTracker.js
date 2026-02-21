@@ -176,11 +176,21 @@
             }
 
             this.wsUrl = wsUrl;
-            this.sessionId = this.getStorage('vi_session_id') || this.generateSessionId();
+            this.sessionId = this.getStorage('vi_session_id');
             this.userId = this.getStorage('vi_user_id') || `user_${Math.random().toString(36).substr(2, 9)}`;
 
-            this.setStorage('vi_session_id', this.sessionId);
+            // Check for session timeout (30 mins)
+            const lastActivity = this.getStorage('vi_last_activity');
+            const now = Date.now();
+
+            if (!this.sessionId || (lastActivity && (now - parseInt(lastActivity)) > 30 * 60 * 1000)) {
+                // Expired or new session
+                this.sessionId = this.generateSessionId();
+                this.setStorage('vi_session_id', this.sessionId);
+            }
+
             this.setStorage('vi_user_id', this.userId);
+            this.updateActivity();
 
             this.client = createGraphQLWSClient(this.wsUrl);
             this.isTrackingActive = false;
@@ -226,6 +236,10 @@
                 mouse_trace: [],
                 geolocation: null
             };
+        }
+
+        updateActivity() {
+            this.setStorage('vi_last_activity', Date.now().toString());
         }
 
         getStorage(key) {
@@ -371,7 +385,8 @@
                     referrer: document.referrer,
                     userAgent: navigator.userAgent,
                     timestamp: Date.now(),
-                    metadata: JSON.stringify(metadata)
+                    metadata: JSON.stringify(metadata),
+                    visitorId: this.userId
                 };
 
                 const mutation = `
@@ -480,6 +495,7 @@
         // --- Tracking Logic ---
 
         trackEvent(eventType, data) {
+            this.updateActivity();
             const payloadData = {
                 ...data,
                 userAgent: navigator.userAgent
@@ -495,7 +511,8 @@
                 sessionId: this.sessionId,
                 eventType,
                 data: JSON.stringify(payloadData),
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                visitorId: this.userId
             };
 
             // Ensure data is always a JSON string as per GraphQL schema

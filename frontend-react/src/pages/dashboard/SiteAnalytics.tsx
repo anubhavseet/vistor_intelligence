@@ -33,12 +33,13 @@ import { CohortAnalytics } from '@/components/analytics/CohortAnalytics';
 import { AttributionAnalytics } from '@/components/analytics/AttributionAnalytics';
 import LiveVisitorMap from '@/components/LiveVisitorMap';
 import IntentStream from '@/components/IntentStream';
+import { VisitorsList } from '@/components/analytics/VisitorsList';
 import { GET_ANALYTICS } from '@/lib/queries';
 
 export default function SiteAnalyticsPage() {
     const { siteId } = useParams<{ siteId: string }>();
     const [days, setDays] = useState(30);
-    const [activeTab, setActiveTab] = useState<'overview' | 'live' | 'map' | 'intent' | 'cohorts' | 'behavioral' | 'visual' | 'attribution'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'visitors' | 'live' | 'map' | 'intent' | 'cohorts' | 'behavioral' | 'visual' | 'attribution'>('overview');
     const [selectedVisualUrl, setSelectedVisualUrl] = useState<string>('');
 
     const { data, loading, error } = useQuery(GET_ANALYTICS, {
@@ -116,6 +117,18 @@ export default function SiteAnalyticsPage() {
                     )}
                 >
                     Overview
+                </button>
+                <button
+                    onClick={() => setActiveTab('visitors')}
+                    className={cn(
+                        "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap",
+                        activeTab === 'visitors'
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                >
+                    <Users size={14} />
+                    Visitors
                 </button>
                 <button
                     onClick={() => setActiveTab('live')}
@@ -202,6 +215,10 @@ export default function SiteAnalyticsPage() {
                     Visual Analytics
                 </button>
             </div>
+
+            {activeTab === 'visitors' && (
+                <VisitorsList siteId={siteId || ''} />
+            )}
 
             {activeTab === 'live' && (
                 <LiveVisitorDashboard siteId={siteId || ''} />

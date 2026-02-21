@@ -8,6 +8,7 @@ import { StreamProcessingService } from './stream-processing.service';
 import { RawTrackingLog, RawTrackingLogSchema } from '../common/schemas/raw-tracking-log.schema';
 import { PageEvent, PageEventSchema } from '../common/schemas/page-event.schema';
 import { VisitorSession, VisitorSessionSchema } from '../common/schemas/visitor-session.schema';
+import { Visitor, VisitorSchema } from '../common/schemas/visitor.schema';
 import { IntentModule } from '../intent/intent.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { EnrichmentModule } from '../enrichment/enrichment.module';
@@ -28,6 +29,7 @@ import { EnrichmentModule } from '../enrichment/enrichment.module';
             { name: RawTrackingLog.name, schema: RawTrackingLogSchema },
             { name: PageEvent.name, schema: PageEventSchema },
             { name: VisitorSession.name, schema: VisitorSessionSchema },
+            { name: Visitor.name, schema: VisitorSchema },
         ]),
         BullModule.registerQueue({
             name: 'enrichment',

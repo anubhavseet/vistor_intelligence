@@ -4,10 +4,12 @@ import { Model } from 'mongoose';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
 import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schema';
+import { Visitor, VisitorDocument } from '../common/schemas/visitor.schema';
 import {
   OverviewStats, ReferrerStat, GeoStat, PageStat, DailyStat, HeatMapPoint,
   AnalyticsDashboardData, PagePerformanceStat, UserFlowStat, BehavioralPatternStat,
-  TopInteraction, CustomEventStat, PageSection, SectionMetric, CityStat, AreaStats, UtmCampaignStat, DeviceStat
+  TopInteraction, CustomEventStat, PageSection, SectionMetric, CityStat, AreaStats, UtmCampaignStat, DeviceStat,
+  VisitorProfile
 } from './dto/analytics.types';
 import { QdrantService } from '../qdrant/qdrant.service';
 
@@ -22,8 +24,40 @@ export class AnalyticsService {
     private rawTrackingLogModel: Model<RawTrackingLogDocument>,
     @InjectModel(PageEvent.name)
     private pageEventModel: Model<PageEventDocument>,
+    @InjectModel(Visitor.name)
+    private visitorModel: Model<VisitorDocument>,
     private qdrantService: QdrantService,
   ) { }
+
+  async getVisitorProfile(siteId: string, visitorId: string): Promise<VisitorProfile | null> {
+    const visitor = await this.visitorModel.findOne({ siteId, visitorId }).lean();
+    if (!visitor) return null;
+
+    const sessions = await this.visitorSessionModel.find({ siteId, visitorId })
+      .sort({ startedAt: -1 })
+      .limit(50).lean();
+
+    return {
+      visitorId: visitor.visitorId,
+      firstSeenAt: visitor.firstSeenAt,
+      lastSeenAt: visitor.lastSeenAt,
+      totalSessions: visitor.totalSessions,
+      totalPageViews: visitor.totalPageViews,
+      totalTimeSpent: visitor.totalTimeSpent,
+      avgIntentScore: visitor.avgIntentScore,
+      tags: visitor.tags || [],
+      deviceStats: (visitor as any).deviceStats,
+      geo: (visitor as any).geo,
+      sessions: sessions.map((s: any) => ({
+        sessionId: s.sessionId,
+        startedAt: s.startedAt,
+        duration: s.totalTimeSpent,
+        pageViews: s.totalPageViews,
+        intentScore: s.intentScore,
+        intentCategory: s.intentCategory,
+      })),
+    };
+  }
 
   async getDashboardData(siteId: string, days: number = 30): Promise<AnalyticsDashboardData> {
     const startDate = new Date();
@@ -839,5 +873,93 @@ export class AnalyticsService {
     ];
 
     return this.visitorSessionModel.aggregate(pipeline);
+  }
+
+  async getVisitors(
+    siteId: string,
+    limit: number = 50,
+    offset: number = 0,
+    sortBy: string = 'lastSeenAt',
+    sortOrder: 'asc' | 'desc' = 'desc'
+  ): Promise<{ visitors: VisitorProfile[], total: number }> {
+    const sortParams: Record<string, 1 | -1> = {};
+    // Ensure sortBy is valid to prevent injection 
+    const validSortFields = ['lastSeenAt', 'firstSeenAt', 'avgIntentScore', 'totalSessions', 'totalPageViews', 'totalTimeSpent'];
+    const actualSortBy = validSortFields.includes(sortBy) ? sortBy : 'lastSeenAt';
+    sortParams[actualSortBy] = sortOrder === 'asc' ? 1 : -1;
+
+    const [visitors, total] = await Promise.all([
+      this.visitorModel.find({ siteId })
+        .sort(sortParams)
+        .skip(offset)
+        .limit(limit)
+        .lean(),
+      this.visitorModel.countDocuments({ siteId })
+    ]);
+
+    const mappedVisitors = await Promise.all(visitors.map(async (v: any) => {
+      const sessions = await this.visitorSessionModel.find({ siteId, visitorId: v.visitorId })
+        .sort({ startedAt: -1 })
+        .limit(5)
+        .lean();
+
+      return {
+        visitorId: v.visitorId,
+        firstSeenAt: v.firstSeenAt,
+        lastSeenAt: v.lastSeenAt,
+        totalSessions: v.totalSessions,
+        totalPageViews: v.totalPageViews,
+        totalTimeSpent: v.totalTimeSpent,
+        avgIntentScore: v.avgIntentScore,
+        tags: v.tags || [],
+        deviceStats: v.deviceStats,
+        geo: v.geo,
+        sessions: sessions.map((s: any) => ({
+          sessionId: s.sessionId,
+          startedAt: s.startedAt,
+          duration: s.totalTimeSpent || 0,
+          pageViews: s.totalPageViews || 0,
+          intentScore: s.intentScore || 0,
+          intentCategory: s.intentCategory
+        }))
+      };
+    }));
+
+    return { visitors: mappedVisitors, total };
+  }
+
+  async getTopVisitors(siteId: string, limit: number = 10): Promise<VisitorProfile[]> {
+    const topVisitors = await this.visitorModel.find({ siteId })
+      .sort({ avgIntentScore: -1, totalSessions: -1 })
+      .limit(limit)
+      .lean();
+
+    return Promise.all(topVisitors.map(async (v: any) => {
+      const sessions = await this.visitorSessionModel.find({ siteId, visitorId: v.visitorId })
+        .sort({ startedAt: -1 })
+        .limit(5)
+        .lean();
+
+      return {
+        visitorId: v.visitorId,
+        firstSeenAt: v.firstSeenAt,
+        lastSeenAt: v.lastSeenAt,
+        totalSessions: v.totalSessions,
+        totalPageViews: v.totalPageViews,
+        totalTimeSpent: v.totalTimeSpent,
+        avgIntentScore: v.avgIntentScore,
+        tags: v.tags || [],
+        deviceStats: v.deviceStats,
+        geo: v.geo,
+        sessions: sessions.map((s: any) => ({
+          sessionId: s.sessionId,
+          startedAt: s.startedAt,
+          duration: s.totalTimeSpent || 0,
+          pageViews: s.totalPageViews || 0,
+          intentScore: s.intentScore || 0,
+          intentCategory: s.intentCategory
+        }))
+      };
+    }));
   }
 }

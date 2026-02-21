@@ -313,6 +313,83 @@ export const CohortAnalytics: React.FC<CohortAnalyticsProps> = ({ siteId }) => {
                     </div>
                 )}
             </div>
+
+            {/* High Value Visitors */}
+            <HighValueVisitors siteId={siteId} />
+        </div>
+    );
+};
+
+export const HighValueVisitors: React.FC<{ siteId: string }> = ({ siteId }) => {
+    const GET_TOP_VISITORS = gql`
+      query GetTopVisitors($siteId: String!) {
+        getTopVisitors(siteId: $siteId) {
+          visitorId
+          totalSessions
+          avgIntentScore
+          lastSeenAt
+          tags
+        }
+      }
+    `;
+
+    const { data } = useQuery(GET_TOP_VISITORS, { variables: { siteId } });
+    const visitors = (data as any)?.getTopVisitors || [];
+
+    return (
+        <div className="bg-card border rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Target className="w-5 h-5 text-primary" />
+                High Value Visitors
+            </h3>
+
+            {visitors.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                    <p>No high value visitors identified yet.</p>
+                </div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-border/50 text-left">
+                                <th className="pb-3 font-medium text-muted-foreground">Visitor ID</th>
+                                <th className="pb-3 font-medium text-muted-foreground">Sessions</th>
+                                <th className="pb-3 font-medium text-muted-foreground">Avg Intent</th>
+                                <th className="pb-3 font-medium text-muted-foreground">Last Seen</th>
+                                <th className="pb-3 font-medium text-muted-foreground">Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {visitors.map((v: any) => (
+                                <tr key={v.visitorId} className="border-b border-border/10 hover:bg-muted/20">
+                                    <td className="py-3 font-mono">{v.visitorId}</td>
+                                    <td className="py-3">{v.totalSessions}</td>
+                                    <td className="py-3">
+                                        <span className={cn(
+                                            "px-2 py-0.5 rounded text-xs font-medium",
+                                            v.avgIntentScore >= 70 ? "bg-green-500/10 text-green-500" :
+                                                v.avgIntentScore >= 40 ? "bg-yellow-500/10 text-yellow-500" :
+                                                    "bg-gray-500/10 text-gray-500"
+                                        )}>
+                                            {v.avgIntentScore.toFixed(0)}
+                                        </span>
+                                    </td>
+                                    <td className="py-3">{new Date(v.lastSeenAt).toLocaleDateString()}</td>
+                                    <td className="py-3">
+                                        <div className="flex gap-1">
+                                            {v.tags.map((t: string) => (
+                                                <span key={t} className="px-1.5 py-0.5 bg-primary/10 text-primary text-[10px] rounded">
+                                                    {t}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 };

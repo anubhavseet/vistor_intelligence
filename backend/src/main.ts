@@ -4,18 +4,17 @@ import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    cors: {
+      origin: true,
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      credentials: true,
+      allowedHeaders:
+        'Content-Type, x-site-id, x-api-key, Accept, Authorization, X-Requested-With, Apollo-Require-Preflight, ngrok-skip-browser-warning',
+    },
+  });
 
   const configService = app.get(ConfigService);
-
-  // Enable CORS
-  // Enable CORS (Permissive for Development)
-  app.enableCors({
-    origin: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-    allowedHeaders: 'Content-Type, x-site-id, x-api-key, Accept, Authorization, X-Requested-With, Apollo-Require-Preflight, ngrok-skip-browser-warning',
-  });
 
   // Set Global Prefix to match API Spec
   app.setGlobalPrefix('api/v1');

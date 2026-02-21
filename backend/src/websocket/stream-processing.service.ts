@@ -5,6 +5,7 @@ import { SessionManagerService } from './session-manager.service';
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
 import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schema';
 import { VisitorSession, VisitorSessionDocument } from '../common/schemas/visitor-session.schema';
+import { Visitor, VisitorDocument } from '../common/schemas/visitor.schema';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { hashIP } from '../common/utils/crypto.util';
@@ -37,6 +38,8 @@ export class StreamProcessingService {
         private pageEventModel: Model<PageEventDocument>,
         @InjectModel(VisitorSession.name)
         private visitorSessionModel: Model<VisitorSessionDocument>,
+        @InjectModel(Visitor.name)
+        private visitorModel: Model<VisitorDocument>,
         @InjectQueue('enrichment') private enrichmentQueue: Queue,
         private enrichmentService: EnrichmentService,
         @Inject('PUB_SUB') private pubSub: PubSub,
@@ -50,7 +53,8 @@ export class StreamProcessingService {
         siteId: string,
         ipAddress: string,
         userAgent: string,
-        metadata?: any
+        metadata?: any,
+        visitorId?: string,
     ): Promise<void> {
         let session = await this.visitorSessionModel.findOne({ sessionId, siteId });
 
@@ -79,6 +83,7 @@ export class StreamProcessingService {
                 sessionId,
                 siteId,
                 ipHash,
+                visitorId,
                 userAgent,
                 deviceType: uaInfo.deviceType,
                 browser: uaInfo.browser,
@@ -103,6 +108,51 @@ export class StreamProcessingService {
                 sessionId: session._id.toString(),
                 ipAddress: ipAddress,
             }).catch(() => { });
+
+            // --- Visitor Profile Management ---
+            if (visitorId) {
+                try {
+                    const now = new Date();
+                    const isMobile = uaInfo.deviceType === 'Mobile' || uaInfo.deviceType === 'Tablet';
+                    const visitorSetObject: any = {
+                        lastSeenAt: now,
+                        'deviceStats.lastDevice': uaInfo.deviceType || 'unknown'
+                    };
+                    if (initialGeo) {
+                        visitorSetObject.geo = {
+                            country: initialGeo.country,
+                            city: initialGeo.city,
+                            region: initialGeo.region
+                        };
+                    }
+
+                    const visitorIncObject: any = { totalSessions: 1 };
+                    if (isMobile) {
+                        visitorIncObject['deviceStats.mobileCount'] = 1;
+                    } else {
+                        visitorIncObject['deviceStats.desktopCount'] = 1;
+                    }
+
+                    await this.visitorModel.findOneAndUpdate(
+                        { visitorId, siteId },
+                        {
+                            $set: visitorSetObject,
+                            $setOnInsert: {
+                                firstSeenAt: now,
+                                tags: ['New'],
+                                totalSessions: 0,
+                                totalPageViews: 0,
+                                totalTimeSpent: 0,
+                                avgIntentScore: 0
+                            },
+                            $inc: visitorIncObject
+                        },
+                        { upsert: true, new: true }
+                    );
+                } catch (e) {
+                    this.logger.error(`Failed to update visitor profile for ${visitorId}`, e);
+                }
+            }
         }
     }
 
@@ -301,6 +351,7 @@ export class StreamProcessingService {
         sessionId: string,
         batch: any,
         intentResult?: { score: number; category: string },
+        visitorId?: string,
     ) {
         const session = await this.visitorSessionModel.findOne({ sessionId, siteId });
         if (!session) {
@@ -314,6 +365,11 @@ export class StreamProcessingService {
         if (intentResult) {
             session.intentScore = intentResult.score;
             session.intentCategory = intentResult.category;
+        }
+
+        // --- Visitor ID Backfill ---
+        if (visitorId && !session.visitorId) {
+            session.visitorId = visitorId;
         }
 
         // --- Pages Visited & Page Views ---
@@ -381,6 +437,51 @@ export class StreamProcessingService {
         }
 
         await session.save();
+
+        // --- Update Visitor Profile Aggregates ---
+        if (session.visitorId) {
+            try {
+                const visitorUpdates: any = {};
+
+                // Increment totals (using deltas would be ideal but hard to track state, 
+                // so we might just set "last known" or increment by batch values if reliable.
+                // For simplicity and robustness, we'll increment based on what we processed in this batch.)
+
+                // Time spent (wall clock)
+                if (batchWallClockSeconds > 0) {
+                    visitorUpdates['$inc'] = {
+                        totalTimeSpent: batchWallClockSeconds
+                    };
+                }
+
+                // Page views (newly visited pages)
+                if (isNewPage) {
+                    if (!visitorUpdates['$inc']) visitorUpdates['$inc'] = {};
+                    visitorUpdates['$inc'].totalPageViews = 1;
+                }
+
+                // Update Intent Average (Stored as running average? Or just update last known?)
+                // A true running average is hard without storing count. 
+                // Let's just update the Visitor's current score to match the latest session's max score for now,
+                // or ideally recalculate it properly periodically. 
+                // For this MVP, let's update "avgIntentScore" to be the average of their session scores.
+                // Since that's expensive to calc every time, we'll just set it to the current session's score 
+                // if it's higher, effectively tracking "Max Intent". 
+                // BETTER: Just set it to the latest session intent.
+                if (session.intentScore > 0) {
+                    visitorUpdates['$set'] = { avgIntentScore: session.intentScore };
+                }
+
+                if (Object.keys(visitorUpdates).length > 0) {
+                    await this.visitorModel.updateOne(
+                        { visitorId: session.visitorId, siteId },
+                        visitorUpdates
+                    );
+                }
+            } catch (e) {
+                this.logger.error(`Failed to update visitor aggregates for ${session.visitorId}`, e);
+            }
+        }
 
         // --- Create PageEvents from batch (parity with REST) ---
         const eventsToSave: any[] = [];

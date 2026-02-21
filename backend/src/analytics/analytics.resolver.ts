@@ -1,4 +1,4 @@
-import { Resolver, Query, Args } from '@nestjs/graphql';
+import { Resolver, Query, Args, ObjectType, Field } from '@nestjs/graphql';
 import { Int } from '@nestjs/graphql';
 import { AnalyticsService } from './analytics.service';
 import { CohortAnalyticsService } from './cohort-analytics.service';
@@ -9,6 +9,8 @@ import {
   AreaStats,
   UtmCampaignStat,
   DeviceStat,
+  VisitorProfile,
+  VisitorListResponse,
 } from './dto/analytics.types';
 import {
   CohortDataType,
@@ -76,6 +78,14 @@ export class AnalyticsResolver {
     return this.analyticsService.getDeviceStats(siteId, days);
   }
 
+  @Query(() => VisitorProfile, { nullable: true })
+  async getVisitorProfile(
+    @Args('siteId') siteId: string,
+    @Args('visitorId') visitorId: string,
+  ): Promise<VisitorProfile | null> {
+    return this.analyticsService.getVisitorProfile(siteId, visitorId);
+  }
+
   // ─── Cohort Analytics ────────────────────────────────────────────────────────
 
   /**
@@ -122,5 +132,24 @@ export class AnalyticsResolver {
     @Args('days', { type: () => Int, defaultValue: 30 }) days: number,
   ): Promise<TemporalPatternType[]> {
     return this.cohortAnalyticsService.analyzeTemporalPatterns(siteId, days);
+  }
+
+  @Query(() => [VisitorProfile])
+  async getTopVisitors(
+    @Args('siteId') siteId: string,
+    @Args('limit', { type: () => Int, defaultValue: 10 }) limit: number
+  ) {
+    return this.analyticsService.getTopVisitors(siteId, limit);
+  }
+
+  @Query(() => VisitorListResponse)
+  async getVisitors(
+    @Args('siteId') siteId: string,
+    @Args('limit', { type: () => Int, defaultValue: 50 }) limit: number,
+    @Args('offset', { type: () => Int, defaultValue: 0 }) offset: number,
+    @Args('sortBy', { type: () => String, defaultValue: 'lastSeenAt' }) sortBy: string,
+    @Args('sortOrder', { type: () => String, defaultValue: 'desc' }) sortOrder: 'asc' | 'desc',
+  ) {
+    return this.analyticsService.getVisitors(siteId, limit, offset, sortBy, sortOrder);
   }
 }

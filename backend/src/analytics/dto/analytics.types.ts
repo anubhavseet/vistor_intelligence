@@ -305,3 +305,93 @@ export class AreaStats {
     @Field(() => [String])
     topPages: string[];
 }
+
+@ObjectType()
+export class SessionSummary {
+    @Field(() => String)
+    sessionId: string;
+
+    @Field(() => Date)
+    startedAt: Date;
+
+    @Field(() => Float)
+    duration: number;
+
+    @Field(() => Int)
+    pageViews: number;
+
+    @Field(() => Float)
+    intentScore: number;
+
+    @Field(() => String, { nullable: true })
+    intentCategory?: string;
+}
+
+@ObjectType()
+export class VisitorDeviceStats {
+    @Field(() => Int, { defaultValue: 0 })
+    mobileCount: number;
+
+    @Field(() => Int, { defaultValue: 0 })
+    desktopCount: number;
+
+    @Field(() => String, { nullable: true })
+    lastDevice?: string;
+}
+
+@ObjectType()
+export class VisitorGeo {
+    @Field(() => String, { nullable: true })
+    country?: string;
+
+    @Field(() => String, { nullable: true })
+    city?: string;
+
+    @Field(() => String, { nullable: true })
+    region?: string;
+}
+
+@ObjectType()
+export class VisitorProfile {
+    @Field(() => String)
+    visitorId: string;
+
+    @Field(() => Date)
+    firstSeenAt: Date;
+
+    @Field(() => Date)
+    lastSeenAt: Date;
+
+    @Field(() => Int)
+    totalSessions: number;
+
+    @Field(() => Int)
+    totalPageViews: number;
+
+    @Field(() => Float)
+    totalTimeSpent: number;
+
+    @Field(() => Float)
+    avgIntentScore: number;
+
+    @Field(() => [String])
+    tags: string[];
+
+    @Field(() => VisitorDeviceStats, { nullable: true })
+    deviceStats?: VisitorDeviceStats;
+
+    @Field(() => VisitorGeo, { nullable: true })
+    geo?: VisitorGeo;
+
+    @Field(() => [SessionSummary])
+    sessions: SessionSummary[];
+}
+
+@ObjectType()
+export class VisitorListResponse {
+    @Field(() => [VisitorProfile])
+    visitors: VisitorProfile[];
+
+    @Field(() => Int)
+    total: number;
+}

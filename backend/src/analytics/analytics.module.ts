@@ -6,6 +6,7 @@ import { CohortAnalyticsService } from './cohort-analytics.service';
 import { VisitorSession, VisitorSessionSchema } from '../common/schemas/visitor-session.schema';
 import { RawTrackingLog, RawTrackingLogSchema } from '../common/schemas/raw-tracking-log.schema';
 import { PageEvent, PageEventSchema } from '../common/schemas/page-event.schema';
+import { Visitor, VisitorSchema } from '../common/schemas/visitor.schema';
 import { QdrantModule } from '../qdrant/qdrant.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { QdrantModule } from '../qdrant/qdrant.module';
       { name: VisitorSession.name, schema: VisitorSessionSchema },
       { name: RawTrackingLog.name, schema: RawTrackingLogSchema },
       { name: PageEvent.name, schema: PageEventSchema },
+      { name: Visitor.name, schema: VisitorSchema },
     ]),
     QdrantModule,
   ],

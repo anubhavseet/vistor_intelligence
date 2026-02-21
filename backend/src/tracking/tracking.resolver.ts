@@ -109,6 +109,7 @@ export class TrackingResolver {
 
       const result = await this.trackingService.processSignalBatch(siteId, apiKey, {
         sessionId: input.sessionId,
+        visitorId: input.visitorId,
         signals,
         timestamp: input.timestamp || Date.now(),
         ipAddress,
@@ -124,6 +125,7 @@ export class TrackingResolver {
 
     const result = await this.trackingService.ingestEvent(siteId, apiKey, {
       sessionId: input.sessionId,
+      visitorId: input.visitorId,
       eventType: input.eventType as any,
       pageUrl: input.pageUrl,
       referrer: input.referrer,

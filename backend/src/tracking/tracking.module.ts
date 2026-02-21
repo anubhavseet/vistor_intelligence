@@ -5,6 +5,7 @@ import { TrackingService } from './tracking.service';
 import { TrackingController } from './tracking.controller';
 import { TrackingResolver } from './tracking.resolver';
 import { VisitorSession, VisitorSessionSchema } from '../common/schemas/visitor-session.schema';
+import { Visitor, VisitorSchema } from '../common/schemas/visitor.schema';
 import { PageEvent, PageEventSchema } from '../common/schemas/page-event.schema';
 import { RawTrackingLog, RawTrackingLogSchema } from '../common/schemas/raw-tracking-log.schema';
 import { SitesModule } from '../sites/sites.module';
@@ -17,6 +18,7 @@ import { EnrichmentProcessor } from './processors/enrichment.processor';
   imports: [
     MongooseModule.forFeature([
       { name: VisitorSession.name, schema: VisitorSessionSchema },
+      { name: Visitor.name, schema: VisitorSchema },
       { name: PageEvent.name, schema: PageEventSchema },
       { name: RawTrackingLog.name, schema: RawTrackingLogSchema },
     ]),

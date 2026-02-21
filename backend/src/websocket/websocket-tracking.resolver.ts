@@ -31,7 +31,7 @@ export class WebSocketTrackingResolver {
         @Context() context: any,
     ): Promise<TrackingEventResponse> {
         try {
-            const { siteId, sessionId, eventType, timestamp } = input;
+            const { siteId, sessionId, eventType, timestamp, visitorId } = input;
 
             // Parse data if it's a JSON string to ensure proper storage format in MongoDB
             let data: any = input.data;
@@ -73,7 +73,8 @@ export class WebSocketTrackingResolver {
                     siteId,
                     ipAddress,
                     userAgent,
-                    metadata
+                    metadata,
+                    visitorId
                 );
 
                 session = await this.sessionManager.getSession(sessionId);
@@ -139,6 +140,7 @@ export class WebSocketTrackingResolver {
                         sessionId,
                         data,
                         { score: intentResult.score, category: intentResult.category },
+                        visitorId
                     );
                 } else {
                     await this.streamProcessor.updatePersistentSession(
@@ -146,6 +148,7 @@ export class WebSocketTrackingResolver {
                         sessionId,
                         { url: data?.url },
                         { score: intentResult.score, category: intentResult.category },
+                        visitorId
                     );
                 }
             }

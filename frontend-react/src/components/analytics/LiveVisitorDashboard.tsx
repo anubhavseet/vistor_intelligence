@@ -4,6 +4,8 @@ import { useSubscription } from '@apollo/client/react';
 import { Activity, Users, Eye, Zap, AlertTriangle, TrendingUp, X, Globe, MousePointer2, Clock, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { VisitorProfile } from './VisitorProfile';
 
 const LIVE_SESSION_SUBSCRIPTION = gql`
   subscription LiveSessionUpdate($siteId: String!) {
@@ -14,6 +16,7 @@ const LIVE_SESSION_SUBSCRIPTION = gql`
       intentScore
       lastActivity
       currentPage
+      visitorId
     }
   }
 `;
@@ -38,6 +41,7 @@ interface LiveSession {
     intentScore: number;
     lastActivity: number;
     currentPage: string;
+    visitorId?: string;
 }
 
 interface Alert {
@@ -57,6 +61,8 @@ export const LiveVisitorDashboard: React.FC<LiveVisitorDashboardProps> = ({ site
     const [liveSessions, setLiveSessions] = useState<Map<string, LiveSession>>(new Map());
     const [alerts, setAlerts] = useState<Alert[]>([]);
     const [selectedSession, setSelectedSession] = useState<LiveSession | null>(null);
+    const [selectedVisitorId, setSelectedVisitorId] = useState<string | null>(null);
+    const [isVisitorProfileOpen, setIsVisitorProfileOpen] = useState(false);
 
     // Track per-session event counts for eventsPerMinute calculation
     const [sessionEventTimes, setSessionEventTimes] = useState<Map<string, number[]>>(new Map());
@@ -463,6 +469,61 @@ export const LiveVisitorDashboard: React.FC<LiveVisitorDashboardProps> = ({ site
                     </>
                 )}
             </AnimatePresence>
+
+            {/* Session Detail Sheet */}
+            <Sheet open={!!selectedSession} onOpenChange={() => setSelectedSession(null)}>
+                <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+                    {selectedSession && (
+                        <div className="space-y-6">
+                            <SheetHeader>
+                                <SheetTitle className="flex items-center gap-2">
+                                    <Activity className="w-5 h-5 text-primary" />
+                                    Session Details
+                                </SheetTitle>
+                                <SheetDescription>
+                                    ID: <span className="font-mono">{selectedSession.sessionId}</span>
+                                </SheetDescription>
+                            </SheetHeader>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <h4 className="text-sm font-medium text-muted-foreground mb-2">Actions</h4>
+                                    <button
+                                        onClick={() => {
+                                            if (selectedSession.visitorId) {
+                                                setSelectedVisitorId(selectedSession.visitorId);
+                                                setIsVisitorProfileOpen(true);
+                                            } else {
+                                                console.warn('Visitor ID not available for this session');
+                                            }
+                                        }}
+                                        disabled={!selectedSession.visitorId}
+                                        className={cn(
+                                            "flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                                            selectedSession.visitorId
+                                                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                                : "bg-muted text-muted-foreground opacity-50 cursor-not-allowed"
+                                        )}
+                                    >
+                                        <Users className="w-3 h-3" />
+                                        View Visitor History
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </SheetContent>
+            </Sheet>
+
+            {/* Visitor Profile Modal */}
+            {selectedVisitorId && (
+                <VisitorProfile
+                    siteId={siteId}
+                    visitorId={selectedVisitorId}
+                    isOpen={isVisitorProfileOpen}
+                    onClose={() => setIsVisitorProfileOpen(false)}
+                />
+            )}
         </div>
     );
 };

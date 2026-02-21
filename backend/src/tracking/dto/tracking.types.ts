@@ -222,4 +222,7 @@ export class TrackInput {
 
     @Field(() => Float, { nullable: true })
     timestamp?: number;
+
+    @Field({ nullable: true })
+    visitorId?: string;
 }

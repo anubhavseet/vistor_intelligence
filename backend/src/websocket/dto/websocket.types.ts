@@ -17,6 +17,9 @@ export class TrackingEventInput {
     @Field()
     data: string; // JSON string of event data
 
+    @Field({ nullable: true })
+    visitorId?: string;
+
     @Field(() => Float, { nullable: true })
     timestamp?: number;
 }

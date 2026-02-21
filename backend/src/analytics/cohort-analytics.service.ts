@@ -47,7 +47,7 @@ export class CohortAnalyticsService {
             // 2. Group by visitor (ipHash) to collect all their session dates
             {
                 $group: {
-                    _id: '$ipHash',
+                    _id: { $ifNull: ['$visitorId', '$ipHash'] },
                     firstSeen: { $min: '$startedAt' },
                     sessionDates: { $push: '$startedAt' },
                     avgIntentScore: { $avg: '$intentScore' }, // ✅ Fixed: intentScore (camelCase)
@@ -338,7 +338,7 @@ export class CohortAnalyticsService {
             // Group by visitor (ipHash) ✅ Fixed: was $ipAddress which doesn't exist
             {
                 $group: {
-                    _id: '$ipHash',
+                    _id: { $ifNull: ['$visitorId', '$ipHash'] },
                     sessionCount: { $sum: 1 },
                     firstSeen: { $min: '$startedAt' },
                     lastSeen: { $max: '$startedAt' },

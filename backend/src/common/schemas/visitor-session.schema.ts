@@ -17,6 +17,9 @@ export class VisitorSession {
   @Prop({ required: false, index: true })
   siteId: string; // Client site identifier
 
+  @Prop({ required: false, index: true })
+  visitorId?: string; // Persistent visitor ID (cookie-based)
+
   @Prop({ required: true, index: true })
   ipHash: string; // SHA-256 hash of IP address (privacy-safe)
 
@@ -132,5 +135,6 @@ VisitorSessionSchema.index({ 'geo.country': 1 });
 VisitorSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 // New indexes for analytics
+VisitorSessionSchema.index({ siteId: 1, visitorId: 1, startedAt: 1 });
 VisitorSessionSchema.index({ siteId: 1, ipHash: 1, startedAt: 1 });
 VisitorSessionSchema.index({ 'geo': '2dsphere' });
