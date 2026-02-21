@@ -31,8 +31,8 @@ export class WebSocketTrackingResolver {
         @Context() context: any,
     ): Promise<TrackingEventResponse> {
         try {
-            const { siteId, sessionId, eventType, timestamp, visitorId } = input;
-            console.log(visitorId, sessionId)
+            const { siteId, sessionId, eventType, timestamp, visitorId: inputVisitorId } = input;
+
             // Parse data if it's a JSON string to ensure proper storage format in MongoDB
             let data: any = input.data;
             try {
@@ -56,29 +56,43 @@ export class WebSocketTrackingResolver {
                     userAgent = data.userAgent;
                 }
 
-                // Initialize new session (Redis)
+                // Resolve visitorId: from input field, or from data payload as fallback
+                const resolvedVisitorId = inputVisitorId || (data && data.visitorId) || undefined;
+
+                // Initialize new session in Redis — store visitorId here, same pattern as sessionId
                 await this.sessionManager.initSession(sessionId, siteId, {
                     socketId: context.req?.headers?.['x-socket-id'] || 'http-fallback',
                     ipAddress,
                     userAgent,
+                    visitorId: resolvedVisitorId,
                 });
 
                 // Initialize Persistent Session (MongoDB)
-                // Try to extract metadata from data if possible (e.g. from pageview or signals)
                 let metadata = null;
                 if (data && data.metadata) metadata = data.metadata;
-                console.log(visitorId, sessionId)
+
+                this.logger.log(`[WebSocket] New session - visitorId: ${resolvedVisitorId}, sessionId: ${sessionId}`);
                 await this.streamProcessor.initPersistentSession(
                     sessionId,
                     siteId,
                     ipAddress,
                     userAgent,
                     metadata,
-                    visitorId
+                    resolvedVisitorId,
                 );
 
                 session = await this.sessionManager.getSession(sessionId);
+            } else if (inputVisitorId && !session.visitorId) {
+                // Session exists but visitorId not yet stored — update Redis now
+                await this.sessionManager.updateSession(sessionId, { visitorId: inputVisitorId });
+                session.visitorId = inputVisitorId;
             }
+
+            // Always resolve visitorId from Redis session (same pattern as sessionId)
+            // Falls back to input or data payload if Redis doesn't have it yet
+            const visitorId = session?.visitorId || inputVisitorId || (data && data.visitorId) || undefined;
+            this.logger.log(`[WebSocket] Resolved visitorId: ${visitorId} for session: ${sessionId}`);
+
 
             // Process event through stream processor
             await this.streamProcessor.processEvent({

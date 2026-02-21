@@ -28,7 +28,7 @@
     };
 
     // --- GraphQL WebSocket Client ---
-    const createGraphQLWSClient = (url) => {
+    const createGraphQLWSClient = (url, visitorIdRef) => {
         let ws = null;
         let connectionAttempts = 0;
         const maxReconnectAttempts = 10;
@@ -51,7 +51,8 @@
                 console.log('[Tracker] ✅ Connected to GraphQL WebSocket');
                 connectionAttempts = 0;
                 console.log('[Tracker] Sending connection_init...');
-                send({ type: 'connection_init' });
+                // Send visitorId in connection_init so the backend knows it from the start
+                send({ type: 'connection_init', payload: { visitorId: visitorIdRef && visitorIdRef() } });
             };
 
             ws.onmessage = (event) => {
@@ -206,7 +207,7 @@
             this.setStorage('vi_user_id', this.userId);
             this.updateActivity();
 
-            this.client = createGraphQLWSClient(this.wsUrl);
+            this.client = createGraphQLWSClient(this.wsUrl, () => this.userId);
             this.isTrackingActive = false;
 
             // Buffer for offline events
@@ -517,22 +518,23 @@
 
         trackEvent(eventType, data) {
             this.updateActivity();
+
+            // Resolve visitorId FIRST before building payloadData
+            const visitorId = this.userId || this.getStorage('vi_user_id') || this.generateVisitorId();
+            if (!this.userId) {
+                this.userId = visitorId;
+                this.setStorage('vi_user_id', visitorId);
+            }
+
             const payloadData = {
                 ...data,
-                userAgent: navigator.userAgent
+                userAgent: navigator.userAgent,
+                visitorId: visitorId  // embed in data JSON as belt+suspenders fallback
             };
 
             // Attach rich metadata for session initialization events
             if (eventType === 'pageview' || eventType === 'signals_batch') {
                 payloadData.metadata = this.getMetadata();
-            }
-
-            // Defensive: always re-read visitorId from storage to avoid null/undefined
-            // (this.userId may not be set if class context was lost or storage was late)
-            const visitorId = this.userId || this.getStorage('vi_user_id') || this.generateVisitorId();
-            if (!this.userId) {
-                this.userId = visitorId;
-                this.setStorage('vi_user_id', visitorId);
             }
 
             const event = {
@@ -541,7 +543,7 @@
                 eventType,
                 data: JSON.stringify(payloadData),
                 timestamp: Date.now(),
-                visitorId: visitorId
+                visitorId: visitorId  // top-level field in TrackingEventInput
             };
 
             console.log('[Tracker] Sending event, visitorId:', visitorId, 'sessionId:', this.sessionId);

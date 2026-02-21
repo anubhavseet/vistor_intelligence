@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 export interface SessionState {
     sessionId: string;
     siteId: string;
+    visitorId?: string; // Persistent visitor identity — stored in Redis like sessionId
     socketId?: string; // Optional - can be http-fallback for non-WebSocket connections
     connectedAt: number;
     lastActivityAt: number;
@@ -229,6 +230,7 @@ export class SessionManagerService {
         return {
             sessionId: data.sessionId,
             siteId: data.siteId,
+            visitorId: data.visitorId || undefined,
             socketId: data.socketId,
             connectedAt: parseInt(data.connectedAt),
             lastActivityAt: parseInt(data.lastActivityAt),
