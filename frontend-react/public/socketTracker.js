@@ -81,9 +81,18 @@
             const isInit = message.type === 'connection_init';
 
             if (isOpen && (acknowledged || isInit)) {
+                const serialized = JSON.stringify(message);
+                // Log visitorId from TrackEvent mutations to diagnose missing field
+                if (message.payload && message.payload.variables && message.payload.variables.input) {
+                    console.log('[Tracker] 📤 WS Send - visitorId:', message.payload.variables.input.visitorId, '| sessionId:', message.payload.variables.input.sessionId);
+                }
                 console.log('[Tracker] 📤 Sending:', message.type, message.id || '');
-                ws.send(JSON.stringify(message));
+                ws.send(serialized);
             } else {
+                // Log queued messages too
+                if (message.payload && message.payload.variables && message.payload.variables.input) {
+                    console.log('[Tracker] ⏳ Queuing - visitorId:', message.payload.variables.input.visitorId, '| sessionId:', message.payload.variables.input.sessionId);
+                }
                 console.log('[Tracker] ⏳ Queuing message:', message.type, `(Open: ${isOpen}, Ack: ${acknowledged})`);
                 pendingMessages.push(message);
             }
