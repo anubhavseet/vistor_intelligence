@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
@@ -11,7 +11,10 @@ import {
     Zap,
     Globe,
     ShieldCheck,
-    BarChart3
+    BarChart3,
+    Users,
+    PieChart,
+    MousePointerClick
 } from 'lucide-react'
 
 // --- Components ---
@@ -36,9 +39,9 @@ const Navbar = () => {
                 </Link>
 
                 <div className="hidden md:flex items-center space-x-8">
-                    {['Features', 'Methodology', 'Pricing', 'Docs'].map((item) => (
-                        <a key={item} href={`#${item.toLowerCase()}`} className="text-sm text-gray-400 hover:text-white transition-colors">
-                            {item}
+                    {[{ label: 'Features', href: '#features' }, { label: 'Analytics', href: '#analytics' }, { label: 'Map', href: '#map' }, { label: 'Methodology', href: '#methodology' }, { label: 'Pricing', href: '#pricing' }].map((item) => (
+                        <a key={item.label} href={item.href} className="text-sm text-gray-400 hover:text-white transition-colors">
+                            {item.label}
                         </a>
                     ))}
                 </div>
@@ -272,41 +275,102 @@ const Features = () => {
                     <div className="md:col-span-4 row-span-2 border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-blue-500/30 transition-colors duration-500">
                         <div className="absolute inset-0 bg-grid-small opacity-10" />
                         <div className="relative z-10 flex flex-col h-full">
-                            <div className="flex items-center space-x-3 mb-4">
+                            <div className="flex items-center space-x-3 mb-3">
                                 <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
                                     <Zap className="w-5 h-5 text-blue-500" />
                                 </div>
                                 <h3 className="text-2xl font-bold">Generative UI Injection</h3>
+                                <span className="ml-auto text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full font-mono tracking-wider">Powered by Gemini</span>
                             </div>
-                            <p className="text-gray-400 max-w-lg mb-8">
-                                The AI doesn't just score intent; it reacts to it. Automatically inject custom, AI-generated HTML/CSS components—like specialized pricing banners or meeting schedulers—tailored to the visitor's industry and behavior.
+                            <p className="text-gray-400 max-w-lg mb-5 text-sm leading-relaxed">
+                                When the AI detects a high-intent visitor, it <span className="text-white font-medium">acts</span>. Gemini generates
+                                a fully personalized HTML component in real-time — tailored to the visitor's industry, score, and current page —
+                                and injects it directly into the DOM without any redeploy.
                             </p>
 
-                            {/* Visual: Code Injection Simulation */}
-                            <div className="flex-1 mt-4 rounded-lg border border-white/10 bg-[#0A0A0A] p-4 font-mono text-xs overflow-hidden relative">
-                                <div className="absolute top-0 left-0 right-0 h-8 bg-[#111] border-b border-white/5 flex items-center px-4 space-x-2">
-                                    <div className="w-2 h-2 rounded-full bg-red-500/50" />
-                                    <div className="w-2 h-2 rounded-full bg-yellow-500/50" />
-                                    <div className="w-2 h-2 rounded-full bg-green-500/50" />
-                                    <span className="text-gray-500 ml-2">dom_injector.js</span>
+                            {/* 3-step pipeline badges */}
+                            <div className="flex flex-wrap items-center gap-2 mb-5">
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-blue-500/30 bg-blue-500/5 text-xs font-mono text-blue-400">
+                                    <span className="font-bold">01</span> Intent Detected
                                 </div>
-                                <div className="pt-8 space-y-2 text-gray-400">
-                                    <div><span className="text-purple-400">if</span> (visitor.intent &gt; <span className="text-blue-400">85</span> && visitor.industry === <span className="text-green-400">'Fintech'</span>) {'{'}</div>
-                                    <div className="pl-4 text-gray-500">// AI generates and injects this component</div>
-                                    <div className="pl-4"><span className="text-yellow-400">const</span> overlay = <span className="text-blue-400">await</span> Gemini.generateUI(<span className="text-green-400">'Enterprise_CTA'</span>);</div>
-                                    <div className="pl-4">document.body.appendChild(overlay);</div>
-                                    <div>{'}'}</div>
+                                <ArrowRight className="w-3 h-3 text-gray-700" />
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-purple-500/30 bg-purple-500/5 text-xs font-mono text-purple-400">
+                                    <span className="font-bold">02</span> Gemini Generates
                                 </div>
-                                {/* Floating injected element visual */}
-                                <motion.div
-                                    className="absolute bottom-4 right-4 bg-[#111] border border-blue-500/30 p-4 rounded-lg shadow-2xl max-w-[200px]"
-                                    initial={{ y: 20, opacity: 0 }}
-                                    whileInView={{ y: 0, opacity: 1 }}
-                                    transition={{ delay: 1 }}
-                                >
-                                    <div className="text-blue-400 font-bold mb-1">Book a Demo</div>
-                                    <div className="text-[10px] text-gray-400">We help Fintech teams like yours scale.</div>
-                                </motion.div>
+                                <ArrowRight className="w-3 h-3 text-gray-700" />
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/30 bg-green-500/5 text-xs font-mono text-green-400">
+                                    <span className="font-bold">03</span> Injected into DOM
+                                </div>
+                            </div>
+
+                            {/* Main visual: split layout */}
+                            <div className="flex-1 grid grid-cols-5 gap-3 min-h-0">
+                                {/* Left: Trigger signal data */}
+                                <div className="col-span-2 rounded-lg border border-white/10 bg-[#0A0A0A] p-4 flex flex-col gap-2">
+                                    <div className="text-[10px] font-mono text-gray-500 uppercase tracking-wider flex items-center gap-2 mb-1">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                                        Trigger Signal
+                                    </div>
+                                    <div className="rounded bg-white/5 border border-white/5 p-2">
+                                        <div className="font-mono text-[10px] text-gray-500 mb-0.5">visitor.intentScore</div>
+                                        <div className="font-mono text-base font-bold text-blue-400">92</div>
+                                    </div>
+                                    <div className="rounded bg-white/5 border border-white/5 p-2">
+                                        <div className="font-mono text-[10px] text-gray-500 mb-0.5">visitor.industry</div>
+                                        <div className="font-mono text-xs text-green-400">"Fintech"</div>
+                                    </div>
+                                    <div className="rounded bg-white/5 border border-white/5 p-2">
+                                        <div className="font-mono text-[10px] text-gray-500 mb-0.5">visitor.org</div>
+                                        <div className="font-mono text-xs text-yellow-400">"Goldman Sachs"</div>
+                                    </div>
+                                    <div className="rounded bg-white/5 border border-white/5 p-2">
+                                        <div className="font-mono text-[10px] text-gray-500 mb-0.5">visitor.page</div>
+                                        <div className="font-mono text-xs text-gray-300">"/pricing"</div>
+                                    </div>
+                                    <div className="mt-auto pt-2 border-t border-white/5">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-purple-400">
+                                            <Zap className="w-3 h-3 shrink-0" /> RULE MATCHED &rarr; inject
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right: Gemini code + injected component preview */}
+                                <div className="col-span-3 rounded-lg border border-white/10 bg-[#0A0A0A] overflow-hidden flex flex-col">
+                                    <div className="h-8 border-b border-white/5 bg-[#111] flex items-center px-3 gap-2 shrink-0">
+                                        <div className="flex gap-1">
+                                            <div className="w-2 h-2 rounded-full bg-[#333]" />
+                                            <div className="w-2 h-2 rounded-full bg-[#333]" />
+                                            <div className="w-2 h-2 rounded-full bg-[#333]" />
+                                        </div>
+                                        <span className="text-[10px] font-mono text-gray-600">dom_injector.js</span>
+                                    </div>
+                                    <div className="p-4 font-mono text-xs space-y-1 text-gray-400">
+                                        <div><span className="text-purple-400">const</span> <span className="text-blue-300">prompt</span> = <span className="text-green-400">`Generate CTA for</span></div>
+                                        <div className="pl-4 text-green-400 text-[10px]">Fintech Lead (92) at Goldman Sachs`;</div>
+                                        <div className="mt-1"><span className="text-purple-400">const</span> <span className="text-blue-300">ui</span> = <span className="text-yellow-400">await</span> Gemini.generateUI(prompt);</div>
+                                        <div>document.body.appendChild(<span className="text-blue-300">ui</span>);</div>
+                                        <div className="text-gray-600 text-[10px] mt-0.5">{'// ↓ injected in <200ms'}</div>
+                                    </div>
+                                    <motion.div
+                                        className="mx-3 mb-3 bg-gradient-to-br from-[#0f1a2e] to-[#111] border border-blue-500/40 rounded-lg p-3 relative overflow-hidden"
+                                        style={{ boxShadow: '0 0 20px rgba(59,130,246,0.08)' }}
+                                        initial={{ y: 10, opacity: 0 }}
+                                        whileInView={{ y: 0, opacity: 1 }}
+                                        viewport={{ once: true }}
+                                        transition={{ delay: 0.8, duration: 0.4 }}
+                                    >
+                                        <div className="absolute top-0 right-0 w-20 h-20 bg-[radial-gradient(circle,rgba(59,130,246,0.12)_0%,transparent_70%)] pointer-events-none" />
+                                        <div className="text-[9px] font-mono text-blue-400/60 mb-1.5 flex items-center gap-1 uppercase tracking-wider">
+                                            <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" /> AI-Injected Component
+                                        </div>
+                                        <div className="text-xs font-bold text-white mb-1">Goldman Sachs — let's talk enterprise.</div>
+                                        <div className="text-[10px] text-gray-400 mb-2.5 leading-relaxed">Our compliance-first analytics plan is trusted by Tier-1 banks and regulated financial teams.</div>
+                                        <div className="flex gap-2">
+                                            <div className="h-6 px-3 bg-blue-500 text-white text-[10px] font-bold rounded flex items-center">Book a Call &rarr;</div>
+                                            <div className="h-6 px-2 border border-white/15 text-gray-400 text-[10px] rounded flex items-center">Case Study</div>
+                                        </div>
+                                    </motion.div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -445,7 +509,7 @@ const MethodologyWaitlist = () => {
                         We track patterns, not names.
                     </motion.h2>
                     <p className="text-gray-400 mb-8 leading-relaxed">
-                        Traditional tools rely on cookies and creeping on individual people. We take a different approach. By analyzing the *shape* of a session—the rapid scroll through pricing, the copy-paste of an API key, the forwarding of a URL—we detect intent at the account level.
+                        Traditional tools rely on cookies and creeping on individual people. We take a different approach. By analyzing the *shape* of a sessionΓÇöthe rapid scroll through pricing, the copy-paste of an API key, the forwarding of a URLΓÇöwe detect intent at the account level.
                     </p>
 
                     <div className="space-y-6">
@@ -524,6 +588,260 @@ const MethodologyWaitlist = () => {
 
                     {/* Decorative back layer */}
                     <div className="absolute -inset-4 border border-white/5 rounded-2xl z-0 transform rotate-2" />
+                </div>
+            </div>
+            <SectionBorder />
+        </section>
+    )
+}
+
+const AnalyticsSuite = () => {
+    return (
+        <section id="analytics" className="py-32 bg-black relative">
+            <div className="max-w-7xl mx-auto px-6">
+                <div className="text-center mb-24 relative z-10">
+                    <motion.h2
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.5 }}
+                        className="text-4xl md:text-5xl font-bold mb-6"
+                    >
+                        Comprehensive <span className="text-blue-500">Analytics Suite</span>.
+                    </motion.h2>
+                    <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+                        Understand your audience with pixel-perfect precision. From cohort retention to individual session playbacks.
+                    </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Live Visitor Streams */}
+                    <div className="border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-blue-500/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-6">
+                            <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20"><Activity className="w-6 h-6 text-blue-500" /></div>
+                            <h3 className="text-2xl font-bold">Live Visitor Streams</h3>
+                        </div>
+                        <p className="text-gray-400 mb-6">Watch users navigate in real-time. Intent scores update dynamically via lightning-fast WebSockets.</p>
+                        <div className="bg-[#111] border border-white/10 rounded-lg p-4 font-mono text-xs overflow-hidden h-40 relative">
+                            <div className="flex justify-between items-center bg-white/5 p-2 rounded mb-2 border border-white/5">
+                                <span className="text-blue-400">user_491</span><span className="text-gray-500 text-[10px]">/pricing</span>
+                                <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded text-[10px] border border-blue-500/30">DWELLING</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-white/5 p-2 rounded mb-2 w-[85%] border border-white/5">
+                                <span className="text-green-400">user_822</span><span className="text-gray-500 text-[10px]">/docs/api</span>
+                                <span className="bg-green-500/20 text-green-300 px-2 py-0.5 rounded text-[10px] border border-green-500/30">COPYING</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-white/5 p-2 rounded mb-2 w-[95%] border border-white/5">
+                                <span className="text-purple-400">user_104</span><span className="text-gray-500 text-[10px]">/checkout</span>
+                                <span className="bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded text-[10px] border border-purple-500/30">CONVERTED</span>
+                            </div>
+                            <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111] to-transparent pointer-events-none" />
+                        </div>
+                    </div>
+                    {/* Cohort Retention */}
+                    <div className="border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-emerald-500/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-6">
+                            <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20"><Users className="w-6 h-6 text-emerald-500" /></div>
+                            <h3 className="text-2xl font-bold">Cohort Retention</h3>
+                        </div>
+                        <p className="text-gray-400 mb-6">Track how groups convert over time. Identify which acquisition channels bring the stickiest, highest-intent accounts.</p>
+                        <div className="bg-[#111] border border-white/10 rounded-lg p-4 h-40 flex flex-col gap-2 overflow-hidden">
+                            <div className="flex gap-2 text-[10px] text-gray-500 mb-1">
+                                <div className="w-14 shrink-0">Cohort</div>
+                                <div className="flex-1 grid grid-cols-3 gap-1 text-center"><div>Day 1</div><div>Day 7</div><div>Day 30</div></div>
+                            </div>
+                            {[{ l: 'Jan 01', v: ['80%', '52%', '31%'], c: ['bg-emerald-500/80', 'bg-emerald-500/50', 'bg-emerald-500/30'] }, { l: 'Jan 08', v: ['74%', '44%', '—'], c: ['bg-emerald-500/70', 'bg-emerald-500/40', 'bg-white/5'] }, { l: 'Jan 15', v: ['88%', '61%', '—'], c: ['bg-emerald-500/90', 'bg-emerald-500/60', 'bg-white/5'] }].map((row, i) => (
+                                <div key={i} className="flex gap-2 items-center">
+                                    <div className="w-14 shrink-0 text-[10px] text-gray-400 font-mono">{row.l}</div>
+                                    <div className="flex-1 grid grid-cols-3 gap-1">{row.v.map((v, j) => <div key={j} className={`${row.c[j]} rounded h-5 flex items-center justify-center text-[9px] font-mono text-white/80`}>{v}</div>)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {/* Campaign Attribution */}
+                    <div className="border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-amber-500/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-6">
+                            <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/20"><PieChart className="w-6 h-6 text-amber-500" /></div>
+                            <h3 className="text-2xl font-bold">Campaign Attribution</h3>
+                        </div>
+                        <p className="text-gray-400 mb-6">Connect marketing spend to high-intent behavior. See which UTM sources drive the most valuable interactions.</p>
+                        <div className="bg-[#111] border border-white/10 rounded-lg p-4 h-40 overflow-hidden relative">
+                            <div className="flex items-end justify-between px-1 h-full pb-3 gap-2">
+                                {[{ l: 'Google', h: '80%', c: 'bg-amber-500/20' }, { l: 'LinkedIn', h: '40%', c: 'bg-amber-500/40' }, { l: 'X.com', h: '62%', c: 'bg-amber-500/60' }, { l: 'Direct', h: '92%', c: 'bg-amber-500' }, { l: 'Email', h: '55%', c: 'bg-amber-500/50' }].map((bar, i) => (
+                                    <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-1">
+                                        <span className="text-[9px] font-mono text-gray-500">{bar.l}</span>
+                                        <div className={`w-full ${bar.c} rounded-t-sm`} style={{ height: bar.h }} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    {/* Visual Heatmaps */}
+                    <div className="border border-white/10 rounded-xl bg-[#050505] p-8 relative overflow-hidden group hover:border-pink-500/30 transition-colors duration-500">
+                        <div className="flex items-center space-x-3 mb-6">
+                            <div className="p-2 bg-pink-500/10 rounded-lg border border-pink-500/20"><MousePointerClick className="w-6 h-6 text-pink-500" /></div>
+                            <h3 className="text-2xl font-bold">Visual Heatmaps</h3>
+                        </div>
+                        <p className="text-gray-400 mb-6">Click density, scroll depth, and rage-click detection layered on an HTML reconstruction of your live page.</p>
+                        <div className="bg-[#111] border border-white/10 rounded-lg h-40 overflow-hidden relative">
+                            <div className="absolute inset-0 p-5 flex flex-col gap-2">
+                                <div className="h-3 w-3/4 bg-white/5 rounded" /><div className="h-3 w-1/2 bg-white/5 rounded" />
+                                <div className="flex gap-2 mt-1"><div className="h-5 w-16 bg-white/5 rounded" /><div className="h-5 w-12 bg-white/5 rounded" /></div>
+                                <div className="mt-1 h-8 w-28 bg-pink-500/15 border border-pink-500/40 rounded flex items-center justify-center text-[9px] font-mono text-pink-400 relative z-10">[CTA BUTTON]</div>
+                            </div>
+                            <div className="absolute left-5 top-16 w-32 h-20 bg-[radial-gradient(circle,rgba(236,72,153,0.28)_0%,transparent_70%)] group-hover:opacity-100 opacity-50 mix-blend-screen pointer-events-none transition-opacity duration-1000" />
+                            <div className="absolute right-8 top-6 w-20 h-16 bg-[radial-gradient(circle,rgba(251,146,60,0.22)_0%,transparent_70%)] group-hover:opacity-90 opacity-30 mix-blend-screen pointer-events-none transition-opacity duration-1000" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <SectionBorder />
+        </section>
+    )
+}
+
+const LiveMapShowcase = () => {
+    const dots = [
+        { top: '28%', left: '22%', color: 'bg-red-500', size: 'w-2 h-2', pulse: true },
+        { top: '35%', left: '48%', color: 'bg-orange-500', size: 'w-2.5 h-2.5', pulse: false },
+        { top: '45%', left: '52%', color: 'bg-blue-500', size: 'w-1.5 h-1.5', pulse: false },
+        { top: '22%', left: '68%', color: 'bg-red-500', size: 'w-2 h-2', pulse: true },
+        { top: '50%', left: '70%', color: 'bg-orange-500', size: 'w-1.5 h-1.5', pulse: false },
+        { top: '40%', left: '78%', color: 'bg-blue-500', size: 'w-2 h-2', pulse: false },
+        { top: '30%', left: '82%', color: 'bg-red-500', size: 'w-3 h-3', pulse: true },
+        { top: '60%', left: '30%', color: 'bg-orange-500', size: 'w-2 h-2', pulse: false },
+        { top: '55%', left: '60%', color: 'bg-blue-500', size: 'w-2.5 h-2.5', pulse: true },
+        { top: '20%', left: '37%', color: 'bg-red-500', size: 'w-1.5 h-1.5', pulse: false },
+        { top: '65%', left: '44%', color: 'bg-orange-500', size: 'w-2 h-2', pulse: false },
+    ]
+    return (
+        <section id="map" className="py-32 bg-[#050505] relative">
+            <div className="max-w-7xl mx-auto px-6">
+                <div className="grid md:grid-cols-2 gap-20 items-center">
+                    <div>
+                        <div className="text-blue-500 font-mono text-xs mb-4">LIVE VISITOR MAP</div>
+                        <motion.h2 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="text-4xl font-bold mb-6">
+                            Every visitor.<br />Pinned on the map.
+                        </motion.h2>
+                        <p className="text-gray-400 mb-8 leading-relaxed">Watch high-intent visitors light up the world map in real-time. Filter by referrer, device, or draw a custom area for granular stats — down to the city level.</p>
+                        <div className="space-y-4 mb-8">
+                            {[
+                                { color: 'bg-red-500', label: 'Lead (Intent > 70)', desc: 'Hot prospects ready for outreach.' },
+                                { color: 'bg-orange-500', label: 'Researcher (30–70)', desc: 'Actively evaluating your product.' },
+                                { color: 'bg-blue-500', label: 'Bouncer (< 30)', desc: 'Early stage or low-engagement.' },
+                            ].map((item, i) => (
+                                <div key={i} className="flex items-start space-x-4">
+                                    <div className={`w-3 h-3 rounded-full ${item.color} mt-1 shrink-0`} />
+                                    <div><h4 className="text-white font-bold text-sm mb-0.5">{item.label}</h4><p className="text-xs text-gray-500">{item.desc}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                            {['Time Lapse Replay', 'Draw Area Stats', 'City Intelligence', 'Device Filter'].map(tag => (
+                                <span key={tag} className="text-xs px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-400 font-mono">{tag}</span>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="relative">
+                        <div className="border border-white/10 rounded-xl bg-black overflow-hidden relative z-10">
+                            <div className="h-9 border-b border-white/10 bg-[#111] flex items-center px-4 gap-2">
+                                <div className="flex gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#333]" /><div className="w-2.5 h-2.5 rounded-full bg-[#333]" /><div className="w-2.5 h-2.5 rounded-full bg-[#333]" /></div>
+                                <div className="flex-1 flex justify-center"><div className="text-[10px] font-mono text-gray-600">Live Visitor Map · 24h · Satellite</div></div>
+                                <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /><span className="text-[10px] font-mono text-green-500">12 live</span></div>
+                            </div>
+                            <div className="relative h-72 bg-[#0A0F1A] overflow-hidden">
+                                <div className="absolute inset-0 opacity-20">
+                                    <svg width="100%" height="100%" viewBox="0 0 600 288">
+                                        <path d="M60 80 Q120 60 170 90 Q190 110 160 130 Q130 150 90 140 Q50 130 60 80Z" fill="#1e3a5f" />
+                                        <path d="M200 50 Q320 30 380 70 Q420 90 410 130 Q390 160 340 170 Q270 180 230 160 Q180 140 190 100 Q195 70 200 50Z" fill="#1e3a5f" />
+                                        <path d="M270 180 Q300 175 320 195 Q330 220 310 235 Q285 240 265 225 Q250 205 270 180Z" fill="#1e3a5f" />
+                                        <path d="M420 60 Q480 50 520 80 Q550 110 540 150 Q520 180 480 190 Q440 185 420 160 Q400 130 410 95 Q415 70 420 60Z" fill="#1e3a5f" />
+                                        <path d="M440 200 Q500 190 530 220 Q545 250 520 265 Q490 275 460 260 Q435 240 440 200Z" fill="#1e3a5f" />
+                                    </svg>
+                                </div>
+                                {dots.map((d, i) => (
+                                    <div key={i} className={`absolute ${d.size} ${d.color} rounded-full`} style={{ top: d.top, left: d.left, boxShadow: '0 0 6px currentColor' }}>
+                                        {d.pulse && <div className={`absolute inset-0 ${d.color} rounded-full animate-ping opacity-60`} />}
+                                    </div>
+                                ))}
+                                <motion.div className="absolute top-4 right-4 bg-[#111] border border-white/10 rounded-lg p-3 w-44 shadow-2xl z-10" initial={{ opacity: 0, y: -8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.5 }}>
+                                    <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 bg-red-500 rounded-full" /><span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">Lead · Score 91</span></div>
+                                    <div className="text-xs text-gray-200 font-semibold">London, UK</div>
+                                    <div className="text-[10px] text-gray-500 mt-0.5">Accenture PLC</div>
+                                    <div className="text-[10px] text-gray-600 mt-2 border-t border-white/5 pt-2">Pages: /pricing → /docs/api</div>
+                                </motion.div>
+                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-4 flex justify-between items-end">
+                                    <div className="text-[10px] font-mono text-gray-500">Showing <span className="text-white">247</span> visitors · Last 24h</div>
+                                    <div className="flex gap-3"><span className="text-[10px] text-red-400 font-mono">● 38 Leads</span><span className="text-[10px] text-orange-400 font-mono">● 94 Researchers</span></div>
+                                </div>
+                            </div>
+                            <div className="border-t border-white/10 bg-[#0A0A0A] p-4 grid grid-cols-3 gap-4">
+                                {[{ city: 'London', count: 38, country: 'UK' }, { city: 'New York', count: 61, country: 'US' }, { city: 'Singapore', count: 24, country: 'SG' }].map((c, i) => (
+                                    <div key={i} className="text-center"><div className="text-lg font-bold">{c.count}</div><div className="text-[10px] text-gray-400">{c.city}</div><div className="text-[10px] text-gray-600">{c.country}</div></div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="absolute -inset-4 border border-white/5 rounded-2xl z-0 transform -rotate-1" />
+                    </div>
+                </div>
+            </div>
+            <SectionBorder />
+        </section>
+    )
+}
+
+const IntentStreamShowcase = () => {
+    const sessions = [
+        { id: 'sess_a91c', score: 94, category: 'Lead', location: 'New York, US', org: 'Goldman Sachs', page: '/enterprise', device: 'Desktop · Chrome', active: true, scoreColor: 'text-emerald-500', border: 'border-emerald-500/20', bg: 'bg-emerald-500/5' },
+        { id: 'sess_b3f2', score: 62, category: 'Researcher', location: 'Berlin, DE', org: 'SAP SE', page: '/docs/api', device: 'Desktop · Firefox', active: true, scoreColor: 'text-amber-500', border: 'border-amber-500/20', bg: 'bg-amber-500/5' },
+        { id: 'sess_c8d1', score: 18, category: 'Bouncer', location: 'Mumbai, IN', org: 'Infosys', page: '/', device: 'Mobile · Safari', active: false, scoreColor: 'text-gray-500', border: 'border-white/10', bg: 'bg-white/[0.03]' },
+    ]
+    return (
+        <section id="intent-stream" className="py-32 bg-black relative">
+            <div className="max-w-7xl mx-auto px-6">
+                <div className="grid md:grid-cols-2 gap-20 items-center">
+                    <div className="space-y-4">
+                        {sessions.map((s, i) => (
+                            <motion.div key={s.id} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.15 }}
+                                className={`border rounded-xl p-5 ${s.border} ${s.bg} bg-[#050505]`}>
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`text-3xl font-bold ${s.scoreColor}`}>{s.score}</div>
+                                        <div>
+                                            <div className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Intent Score</div>
+                                            <div className={`text-xs font-semibold mt-0.5 ${s.scoreColor}`}>{s.category}</div>
+                                        </div>
+                                    </div>
+                                    {s.active && <div className="flex items-center gap-1.5 text-[10px] font-bold text-green-500 uppercase tracking-wider"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />Live</div>}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+                                    <div className="flex items-center gap-1.5"><Globe className="w-3 h-3" />{s.location}</div>
+                                    <div className="flex items-center gap-1.5"><Zap className="w-3 h-3" />{s.org}</div>
+                                    <div className="flex items-center gap-1.5"><Code2 className="w-3 h-3" />{s.page}</div>
+                                    <div className="flex items-center gap-1.5"><Layers className="w-3 h-3" />{s.device}</div>
+                                </div>
+                                <div className="mt-3 pt-3 border-t border-white/5"><span className="text-[10px] font-mono text-gray-600">{s.id}</span></div>
+                            </motion.div>
+                        ))}
+                    </div>
+                    <div>
+                        <div className="text-purple-500 font-mono text-xs mb-4">INTENT STREAM</div>
+                        <motion.h2 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className="text-4xl font-bold mb-6">
+                            Know who's on your site.<br /><span className="text-purple-400">Right now.</span>
+                        </motion.h2>
+                        <p className="text-gray-400 mb-8 leading-relaxed">A live feed of every active session. Each card shows the visitor's organization, location, current page, and a dynamically updating intent score via GraphQL subscriptions.</p>
+                        <div className="space-y-5">
+                            {[
+                                { num: '1', title: 'Hardware Fingerprinting', desc: 'GPU renderer, CPU cores, and RAM — unique cookieless device signatures.' },
+                                { num: '2', title: 'Page Journey Timeline', desc: 'Every page a visitor has touched, in order, as a clickable timeline.' },
+                                { num: '3', title: 'Organization Identification', desc: 'Resolve IPs to company names like "Goldman Sachs" using IP intelligence.' },
+                            ].map(item => (
+                                <div key={item.num} className="flex items-start space-x-4">
+                                    <div className="w-6 h-6 rounded-full bg-purple-500/10 text-purple-400 flex items-center justify-center font-mono text-xs border border-purple-500/20 shrink-0">{item.num}</div>
+                                    <div><h4 className="text-white font-bold mb-1 text-sm">{item.title}</h4><p className="text-xs text-gray-400">{item.desc}</p></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
             <SectionBorder />
@@ -712,6 +1030,9 @@ export default function LandingPage() {
             <Marquee />
             <Features />
             <MethodologyWaitlist />
+            <AnalyticsSuite />
+            <LiveMapShowcase />
+            <IntentStreamShowcase />
             <Pricing />
             <CTA />
             <Footer />
