@@ -2,6 +2,8 @@ import { Resolver, Query, Mutation, Args } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { SitesService } from './sites.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Site } from './dto/site.type';
 import { CreateSiteInput } from './dto/create-site.input';
@@ -16,6 +18,14 @@ export class SitesResolver {
   @Query(() => [Site])
   async getSites(@CurrentUser() user: any): Promise<Site[]> {
     const sites = await this.sitesService.getUserSites(user.userId);
+    return mapArrayToGraphQL(sites, mapSiteToGraphQL);
+  }
+
+  @Query(() => [Site], { name: 'adminGetAllSites' })
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  async adminGetAllSites(): Promise<Site[]> {
+    const sites = await this.sitesService.getAllSites();
     return mapArrayToGraphQL(sites, mapSiteToGraphQL);
   }
 

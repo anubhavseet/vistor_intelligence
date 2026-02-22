@@ -169,6 +169,23 @@
     scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
   }
 
+  /* Dark-themed native select dropdowns */
+  select,
+  select option {
+    background-color: #0a0a0a;
+    color: #e5e5e5;
+  }
+
+  select option:checked,
+  select option:hover {
+    background-color: #1a1a1a;
+    color: #ffffff;
+  }
+
+  select option:disabled {
+    color: #555;
+  }
+
   /* Custom Scrollbar - Premium Floating Pill Design */
   ::-webkit-scrollbar {
     width: 12px;

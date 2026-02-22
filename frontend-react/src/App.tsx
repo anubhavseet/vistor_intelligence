@@ -31,6 +31,20 @@ import SiteAnalyticsPage from '@/pages/dashboard/SiteAnalytics'
 import IntentPromptsPage from '@/pages/IntentPromptsPage'
 import IntentPromptsSelectionPage from '@/pages/IntentPromptsSelection'
 import UsersPage from '@/pages/UsersPage'
+import SubscriptionPage from '@/pages/Subscription'
+
+// Admin HQ Pages
+import AdminLoginPage from '@/pages/hq/AdminLogin'
+import AdminLayout from '@/pages/hq/AdminLayout'
+import AdminDashboard from '@/pages/hq/AdminDashboard'
+import AdminUsersPage from '@/pages/hq/AdminUsers'
+import AdminSitesPage from '@/pages/hq/AdminSites'
+import AdminSessionsPage from '@/pages/hq/AdminSessions'
+import AdminWebhooksPage from '@/pages/hq/AdminWebhooks'
+import AdminSystemPage from '@/pages/hq/AdminSystem'
+import AdminPlansPage from '@/pages/hq/AdminPlans'
+import AdminSubscriptionsPage from '@/pages/hq/AdminSubscriptions'
+import { useAdminStore } from '@/store/admin-store'
 
 //ProtectedRoute wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -38,6 +52,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  return <>{children}</>
+}
+
+// Admin Protected Route - checks both auth and admin role
+function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isAdmin } = useAdminStore()
+
+  if (!isAuthenticated() || !isAdmin()) {
+    return <Navigate to="/hq" replace />
   }
 
   return <>{children}</>
@@ -56,6 +81,33 @@ function App() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="/about" element={<AboutPage />} />
+
+          {/* Admin HQ Routes */}
+          <Route path="/hq" element={<AdminLoginPage />} />
+          <Route path="/hq/dashboard" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminDashboard />} />
+          </Route>
+          <Route path="/hq/users" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminUsersPage />} />
+          </Route>
+          <Route path="/hq/sites" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminSitesPage />} />
+          </Route>
+          <Route path="/hq/sessions" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminSessionsPage />} />
+          </Route>
+          <Route path="/hq/webhooks" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminWebhooksPage />} />
+          </Route>
+          <Route path="/hq/system" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminSystemPage />} />
+          </Route>
+          <Route path="/hq/plans" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminPlansPage />} />
+          </Route>
+          <Route path="/hq/subscriptions" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
+            <Route index element={<AdminSubscriptionsPage />} />
+          </Route>
 
           {/* Protected Dashboard Routes */}
           <Route
@@ -80,6 +132,7 @@ function App() {
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="subscription" element={<SubscriptionPage />} />
             <Route path=":siteId" element={<SiteDetailPage />} />
           </Route>
 

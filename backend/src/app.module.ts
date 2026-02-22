@@ -20,6 +20,7 @@ import { HealthModule } from './health/health.module';
 import { CrawlerModule } from './crawler/crawler.module';
 import { UsersModule } from './users/users.module';
 import { WebSocketModule } from './websocket/websocket.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { WebSocketModule } from './websocket/websocket.module';
     CrawlerModule,
     UsersModule,
     WebSocketModule, // Real-time tracking via GraphQL subscriptions
+    SubscriptionModule, // Razorpay subscription management
   ],
 })
 export class AppModule { }

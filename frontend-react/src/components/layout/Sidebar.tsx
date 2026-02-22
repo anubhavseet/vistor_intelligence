@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, AmpersandIcon } from "lucide-react";
+import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, AmpersandIcon, CreditCard } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -62,6 +62,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                                 'settings',
                                 'users',
                                 'site-analytics',
+                                'subscription',
                                 ''
                             ];
                             // If ID is not reserved, it's a site ID, so we are in Site Analytics view
@@ -77,6 +78,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
             icon: Settings,
             children: [
                 { name: "Settings", href: "/dashboard/settings", icon: Settings },
+                { name: "Subscription", href: "/dashboard/subscription", icon: CreditCard },
             ]
         },
     ];

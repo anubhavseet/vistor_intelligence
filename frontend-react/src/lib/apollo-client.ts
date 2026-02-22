@@ -27,7 +27,12 @@ const wsLink = new GraphQLWsLink(
 
 // Auth link for HTTP requests
 const authLink = setContext((_, { headers }) => {
-    const token = localStorage.getItem('auth-token');
+    // Check if we're on an admin route - prioritize admin token
+    const isAdminRoute = window.location.pathname.startsWith('/hq');
+    const adminToken = localStorage.getItem('admin-auth-token');
+    const userToken = localStorage.getItem('auth-token');
+    const token = (isAdminRoute && adminToken) ? adminToken : userToken;
+
     return {
         headers: {
             ...headers,

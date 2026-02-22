@@ -40,6 +40,10 @@ export class SitesService {
     return this.siteModel.find({ userId, isActive: true });
   }
 
+  async getAllSites(): Promise<Site[]> {
+    return this.siteModel.find();
+  }
+
   async validateApiKey(siteId: string, apiKey: string): Promise<boolean> {
     const site = await this.siteModel.findOne({ siteId, apiKey });
     return !!site;
