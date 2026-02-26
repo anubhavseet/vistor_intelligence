@@ -180,12 +180,28 @@ export const CANCEL_SUBSCRIPTION = gql`
   }
 `
 
+
+
+export const CHANGE_PLAN = gql`
+  mutation ChangePlan($newPlanId: String!) {
+    changePlan(newPlanId: $newPlanId) {
+      subscriptionId
+      razorpaySubscriptionId
+      shortUrl
+      razorpayKeyId
+      status
+    }
+  }
+`
+
 export const PAUSE_SUBSCRIPTION = gql`
   mutation PauseSubscription($subscriptionId: String!) {
     pauseSubscription(subscriptionId: $subscriptionId) {
       id
       subscriptionId
       status
+      cancelAtPeriodEnd
+      currentPeriodEnd
     }
   }
 `
@@ -196,18 +212,8 @@ export const RESUME_SUBSCRIPTION = gql`
       id
       subscriptionId
       status
-    }
-  }
-`
-
-export const CHANGE_PLAN = gql`
-  mutation ChangePlan($newPlanId: String!) {
-    changePlan(newPlanId: $newPlanId) {
-      subscriptionId
-      razorpaySubscriptionId
-      shortUrl
-      razorpayKeyId
-      status
+      cancelAtPeriodEnd
+      currentPeriodEnd
     }
   }
 `

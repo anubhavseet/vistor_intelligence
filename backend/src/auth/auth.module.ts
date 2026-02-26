@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { AuthResolver } from './auth.resolver';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { User, UserSchema } from '../common/schemas/user.schema';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   imports: [
@@ -23,8 +24,9 @@ import { User, UserSchema } from '../common/schemas/user.schema';
       }),
       inject: [ConfigService],
     }),
+    SubscriptionModule, // Provides PlanService and SubscriptionService for auto-enrollment
   ],
   providers: [AuthService, AuthResolver, JwtStrategy],
   exports: [AuthService, JwtModule],
 })
-export class AuthModule {}
+export class AuthModule { }

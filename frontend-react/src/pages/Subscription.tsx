@@ -3,13 +3,13 @@ import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     CreditCard, Crown, Check, X, AlertTriangle,
-    ArrowRight, Receipt, Clock,
+    ArrowRight, Receipt, Clock, Play, Pause,
     Globe, Webhook, Brain, Eye, MapPin
 } from 'lucide-react'
 import {
     GET_MY_SUBSCRIPTION, GET_AVAILABLE_PLANS, GET_MY_INVOICES,
     CREATE_SUBSCRIPTION, CANCEL_SUBSCRIPTION, CHANGE_PLAN,
-    GET_INVOICE_DOWNLOAD_URL,
+    GET_INVOICE_DOWNLOAD_URL, PAUSE_SUBSCRIPTION, RESUME_SUBSCRIPTION,
     GetMySubscriptionResponse, GetAvailablePlansResponse, GetMyInvoicesResponse,
     CreateSubscriptionResponse, ChangePlanResponse, GetInvoiceDownloadUrlResponse, SubscriptionPlan,
 } from '@/lib/graphql/subscription-operations'
@@ -21,8 +21,11 @@ declare global {
 
 const statusColors: Record<string, string> = {
     active: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    authenticated: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
     created: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    pending: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
     cancelled: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+    completed: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
     paused: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
     halted: 'bg-red-500/10 text-red-400 border-red-500/20',
     expired: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
@@ -32,6 +35,10 @@ export default function SubscriptionPage() {
     const [cancelModal, setCancelModal] = useState(false)
     const [planChangeModal, setPlanChangeModal] = useState<{ open: boolean, plan: SubscriptionPlan | null }>({ open: false, plan: null })
     const [tab, setTab] = useState<'plans' | 'invoices'>('plans')
+    // Cache the Razorpay key ID after first use so the Complete Payment button can re-open checkout
+    const [cachedRazorpayKeyId, setCachedRazorpayKeyId] = useState<string>(
+        import.meta.env.VITE_RAZORPAY_KEY_ID || ''
+    )
 
     const { data: subData, loading: subLoading, refetch: refetchSub } = useQuery<GetMySubscriptionResponse>(GET_MY_SUBSCRIPTION)
     const { data: plansData, loading: plansLoading } = useQuery<GetAvailablePlansResponse>(GET_AVAILABLE_PLANS)
@@ -40,6 +47,8 @@ export default function SubscriptionPage() {
     const [createSub, { loading: creating }] = useMutation<CreateSubscriptionResponse>(CREATE_SUBSCRIPTION)
     const [cancelSub, { loading: cancelling }] = useMutation(CANCEL_SUBSCRIPTION)
     const [changePlanMut, { loading: changingPlan }] = useMutation<ChangePlanResponse>(CHANGE_PLAN)
+    const [pauseSub, { loading: pausing }] = useMutation(PAUSE_SUBSCRIPTION)
+    const [resumeSub, { loading: resuming }] = useMutation(RESUME_SUBSCRIPTION)
     const [fetchDownloadUrl] = useLazyQuery<GetInvoiceDownloadUrlResponse>(GET_INVOICE_DOWNLOAD_URL)
 
     const subscription = subData?.getMySubscription
@@ -69,24 +78,34 @@ export default function SubscriptionPage() {
                 return
             }
 
-            const rzp = new window.Razorpay({
-                key: razorpayKeyId,
-                subscription_id: razorpaySubscriptionId,
-                name: 'Visitor Intelligence',
-                description: `${plan.name} Plan`,
-                theme: { color: '#dc2626' },
-                handler: () => {
-                    toast.success('Payment successful! Your subscription will activate shortly.')
-                    setTimeout(() => refetchSub(), 3000)
-                },
-                modal: {
-                    ondismiss: () => toast.info('Payment cancelled'),
-                },
-            })
-            rzp.open()
+            openRazorpayCheckout(razorpaySubscriptionId, razorpayKeyId, plan.name)
+            setCachedRazorpayKeyId(razorpayKeyId)
         } catch (err: any) {
             toast.error(err.message)
         }
+    }
+
+    // Opens Razorpay checkout — reusable for initial subscribe and for resuming a pending payment
+    const openRazorpayCheckout = (razorpaySubscriptionId: string, razorpayKeyId: string, planName: string) => {
+        if (!window.Razorpay) {
+            toast.error('Razorpay checkout not available. Please refresh and try again.')
+            return
+        }
+        const rzp = new window.Razorpay({
+            key: razorpayKeyId,
+            subscription_id: razorpaySubscriptionId,
+            name: 'Visitor Intelligence',
+            description: `${planName} Plan`,
+            theme: { color: '#dc2626' },
+            handler: () => {
+                toast.success('Payment successful! Your subscription will activate shortly.')
+                setTimeout(() => refetchSub(), 3000)
+            },
+            modal: {
+                ondismiss: () => toast.info('Payment cancelled'),
+            },
+        })
+        rzp.open()
     }
 
     const handleChangePlan = async (plan: SubscriptionPlan) => {
@@ -105,23 +124,9 @@ export default function SubscriptionPage() {
             }
 
             // If it's a paid upgrade that requires new payment/authentication
-            if (razorpaySubscriptionId && razorpayKeyId && window.Razorpay) {
-                const rzp = new window.Razorpay({
-                    key: razorpayKeyId,
-                    subscription_id: razorpaySubscriptionId,
-                    name: 'Visitor Intelligence',
-                    description: `${plan.name} Plan Update`,
-                    theme: { color: '#dc2626' },
-                    handler: () => {
-                        toast.success('Plan update initiated! Details will refresh shortly.')
-                        setPlanChangeModal({ open: false, plan: null })
-                        setTimeout(() => refetchSub(), 3000)
-                    },
-                    modal: {
-                        ondismiss: () => toast.info('Update cancelled'),
-                    },
-                })
-                rzp.open()
+            if (razorpaySubscriptionId && razorpayKeyId) {
+                openRazorpayCheckout(razorpaySubscriptionId, razorpayKeyId, `${plan.name} Plan Update`)
+                setPlanChangeModal({ open: false, plan: null })
             } else {
                 // Fallback if no razorpay ID (e.g. backend handled it)
                 toast.success(`Plan updating to ${plan.name}...`)
@@ -141,6 +146,37 @@ export default function SubscriptionPage() {
             setCancelModal(false)
             refetchSub()
         } catch (err: any) { toast.error(err.message) }
+    }
+
+    const handlePause = async () => {
+        if (!subscription) return
+        try {
+            await pauseSub({ variables: { subscriptionId: subscription.subscriptionId } })
+            toast.success('Subscription paused')
+            refetchSub()
+        } catch (err: any) { toast.error(err.message) }
+    }
+
+    const handleResume = async () => {
+        if (!subscription) return
+        try {
+            await resumeSub({ variables: { subscriptionId: subscription.subscriptionId } })
+            toast.success('Subscription resumed')
+            refetchSub()
+        } catch (err: any) { toast.error(err.message) }
+    }
+
+    const handleCompletePayment = () => {
+        if (!subscription?.razorpaySubscriptionId || !cachedRazorpayKeyId) {
+            // If key ID isn't cached, instruct user to refresh — it will be fetched on next subscribe attempt
+            toast.info('Please refresh the page and try again, or contact support if the issue persists.')
+            return
+        }
+        openRazorpayCheckout(
+            subscription.razorpaySubscriptionId,
+            cachedRazorpayKeyId,
+            currentPlan?.name || 'Subscription'
+        )
     }
 
     const handleDownloadInvoice = async (invoiceId: string, directUrl?: string) => {
@@ -230,17 +266,49 @@ export default function SubscriptionPage() {
                             </div>
                         )}
 
-                        {/* Cancel button */}
-                        {subscription && !['cancelled', 'completed', 'expired'].includes(subscription.status) && !subscription.cancelAtPeriodEnd && (
-                            <div className="mt-4 pt-4 border-t border-white/[0.06] flex justify-end">
-                                <button onClick={() => setCancelModal(true)} className="text-xs text-gray-500 hover:text-red-400 transition-colors cursor-pointer">Cancel subscription</button>
+                        {/* Action row: Complete Payment / Pause / Resume / Cancel */}
+                        <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                {/* Complete Payment CTA — shown for pending payment states */}
+                                {['created', 'authenticated'].includes(subscription.status) && subscription.razorpaySubscriptionId && (
+                                    <button
+                                        onClick={handleCompletePayment}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all cursor-pointer"
+                                    >
+                                        <CreditCard className="w-3.5 h-3.5" /> Complete Payment
+                                    </button>
+                                )}
+                                {/* Pause — only for active paid subscriptions */}
+                                {subscription.status === 'active' && subscription.razorpaySubscriptionId && !subscription.cancelAtPeriodEnd && (
+                                    <button
+                                        onClick={handlePause}
+                                        disabled={pausing}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-400 bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                                    >
+                                        <Pause className="w-3.5 h-3.5" /> {pausing ? 'Pausing...' : 'Pause'}
+                                    </button>
+                                )}
+                                {/* Resume — only for paused subscriptions */}
+                                {subscription.status === 'paused' && (
+                                    <button
+                                        onClick={handleResume}
+                                        disabled={resuming}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                                    >
+                                        <Play className="w-3.5 h-3.5" /> {resuming ? 'Resuming...' : 'Resume'}
+                                    </button>
+                                )}
                             </div>
-                        )}
-                        {subscription.cancelAtPeriodEnd && (
-                            <div className="mt-4 pt-4 border-t border-white/[0.06] flex justify-end">
-                                <span className="text-xs text-orange-400">Cancels at period end</span>
+                            <div className="flex items-center gap-2">
+                                {subscription.cancelAtPeriodEnd ? (
+                                    <span className="text-xs text-orange-400">Cancels at period end</span>
+                                ) : (
+                                    subscription && !['cancelled', 'completed', 'expired'].includes(subscription.status) && (
+                                        <button onClick={() => setCancelModal(true)} className="text-xs text-gray-500 hover:text-red-400 transition-colors cursor-pointer">Cancel subscription</button>
+                                    )
+                                )}
                             </div>
-                        )}
+                        </div>
                     </div>
                 </motion.div>
             ) : (
@@ -300,6 +368,7 @@ export default function SubscriptionPage() {
                                 <div className="mt-4 space-y-2">
                                     {[
                                         { label: `${plan.features.maxSites === -1 ? 'Unlimited' : plan.features.maxSites} Sites`, on: true },
+                                        { label: `${plan.features.maxWebhooks === -1 ? 'Unlimited' : plan.features.maxWebhooks} Webhooks`, on: true },
                                         { label: `${plan.features.maxSessionsPerMonth === -1 ? 'Unlimited' : plan.features.maxSessionsPerMonth.toLocaleString()} Sessions/mo`, on: true },
                                         { label: `${plan.features.maxAiCallsPerMonth === -1 ? 'Unlimited' : plan.features.maxAiCallsPerMonth.toLocaleString()} AI Calls/mo`, on: true },
                                         { label: `${plan.features.dataRetentionDays} day retention`, on: true },

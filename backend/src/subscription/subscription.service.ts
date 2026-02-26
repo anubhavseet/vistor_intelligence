@@ -136,24 +136,38 @@ export class SubscriptionService {
                 throw new BadRequestException('You are already subscribed to this plan.');
             }
 
-            // Carry over current ongoing usage
+            // Carry over current ongoing usage.
+            // Extract fields explicitly to avoid copying Mongoose internal subdoc metadata.
             if (existingSub.currentUsage) {
-                currentUsage = { ...existingSub.currentUsage } as any;
+                currentUsage = {
+                    sitesCreated: existingSub.currentUsage.sitesCreated || 0,
+                    webhooksCreated: existingSub.currentUsage.webhooksCreated || 0,
+                    sessionsTracked: existingSub.currentUsage.sessionsTracked || 0,
+                    aiCallsMade: existingSub.currentUsage.aiCallsMade || 0,
+                    crawlPagesUsed: existingSub.currentUsage.crawlPagesUsed || 0,
+                };
             }
 
-            // Immediately cancel the old subscription
-            await this.cancelSubscription(existingSub.subscriptionId, userId, false);
+            // Schedule the old subscription for cancellation at period end so the user
+            // retains access until their current billing cycle expires (grace period).
+            // Only hard-cancel a free plan immediately since it has no billing cycle.
+            const existingPlanDoc = existingSub.planId as any;
+            const oldIsFreePlan = (existingPlanDoc?.amount ?? 0) === 0;
+            await this.cancelSubscription(existingSub.subscriptionId, userId, !oldIsFreePlan);
         }
 
         // Free plan — activate immediately without Razorpay
         if (plan.amount === 0) {
+            // Free plans are perpetual — set a far-future period end (100 years) so the
+            // UI never shows an expired date. The cron will renew them anyway.
+            const freePeriodEnd = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
             const sub = new this.subscriptionModel({
                 subscriptionId: uuidv4(),
                 userId: new Types.ObjectId(userId),
                 planId: plan._id,
                 status: 'active',
                 currentPeriodStart: new Date(),
-                currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+                currentPeriodEnd: freePeriodEnd,
                 startedAt: new Date(),
                 paidCount: 0,
                 currentUsage,
@@ -200,9 +214,6 @@ export class SubscriptionService {
     }
 
     async cancelSubscription(subscriptionId: string, userId?: string, cancelAtPeriodEnd = true): Promise<SubscriptionDocument> {
-        // Enforce period-end cancellation to avoid refund issues, as requested.
-        // Even if passed as false, we force it true unless it's a critical override.
-        const forcedCancelAtPeriodEnd = true;
         const sub = await this.getSubscriptionById(subscriptionId);
 
         // Verify ownership if userId provided
@@ -223,9 +234,12 @@ export class SubscriptionService {
         sub.cancelledAt = new Date();
 
         if (!cancelAtPeriodEnd) {
+            // Immediate cancel — mark as cancelled now and enforce limits
             sub.status = 'cancelled';
             sub.endedAt = new Date();
         }
+        // If cancelAtPeriodEnd=true, the status stays active until the period expires.
+        // The expireCompletedSubscriptions() cron will handle the transition.
 
         await sub.save();
 
@@ -288,6 +302,26 @@ export class SubscriptionService {
 
         await sub.save();
         this.logger.log(`Subscription activated: ${sub.subscriptionId}`);
+    }
+
+    /**
+     * Handles subscription.updated webhook — fired when Razorpay updates the plan (e.g., upgrade/downgrade).
+     * Updates billing period timestamps. Plan ID is already updated locally by changePlan().
+     */
+    async handleSubscriptionUpdated(razorpaySubId: string, payload: any): Promise<void> {
+        const sub = await this.subscriptionModel.findOne({ razorpaySubscriptionId: razorpaySubId }).exec();
+        if (!sub) {
+            this.logger.warn(`Webhook: subscription.updated — sub not found: ${razorpaySubId}`);
+            return;
+        }
+
+        // Update period timestamps if provided; plan ID is managed locally by changePlan()
+        if (payload?.current_start) sub.currentPeriodStart = new Date(payload.current_start * 1000);
+        if (payload?.current_end) sub.currentPeriodEnd = new Date(payload.current_end * 1000);
+        if (payload?.customer_id) sub.razorpayCustomerId = payload.customer_id;
+
+        await sub.save();
+        this.logger.log(`Subscription updated (plan change): ${sub.subscriptionId}`);
     }
 
     async handleSubscriptionCharged(razorpaySubId: string, payload: any): Promise<void> {
@@ -669,6 +703,9 @@ export class SubscriptionService {
     }
 
     async syncWithRazorpay(): Promise<number> {
+        // Allowed statuses in our schema — used to whitelist Razorpay statuses before writing to DB
+        const ALLOWED_STATUSES = new Set(['created', 'authenticated', 'active', 'pending', 'halted', 'cancelled', 'completed', 'expired', 'paused']);
+
         const subs = await this.subscriptionModel
             .find({
                 razorpaySubscriptionId: { $exists: true, $ne: null },
@@ -681,6 +718,11 @@ export class SubscriptionService {
             try {
                 const rzpSub = await this.razorpayService.fetchSubscription(sub.razorpaySubscriptionId!);
                 if (rzpSub.status !== sub.status) {
+                    // Only set the status if it's a recognised value to prevent schema validation errors
+                    if (!ALLOWED_STATUSES.has(rzpSub.status)) {
+                        this.logger.warn(`Razorpay returned unknown status "${rzpSub.status}" for ${sub.subscriptionId} — skipping update`);
+                        continue;
+                    }
                     sub.status = rzpSub.status;
                     if (rzpSub.current_start) sub.currentPeriodStart = new Date(rzpSub.current_start * 1000);
                     if (rzpSub.current_end) sub.currentPeriodEnd = new Date(rzpSub.current_end * 1000);
@@ -692,5 +734,29 @@ export class SubscriptionService {
             }
         }
         return synced;
+    }
+
+    /**
+     * Renew free plan subscriptions whose currentPeriodEnd has passed.
+     * Free plans are perpetual — this is a safety net for any records that have an old date.
+     */
+    async renewFreePlanSubscriptions(): Promise<number> {
+        const now = new Date();
+        const farFuture = new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
+
+        const result = await this.subscriptionModel.updateMany(
+            {
+                status: 'active',
+                razorpaySubscriptionId: { $exists: false },  // Free plans have no Razorpay ID
+                currentPeriodEnd: { $lt: now },
+            },
+            {
+                $set: {
+                    currentPeriodStart: now,
+                    currentPeriodEnd: farFuture,
+                },
+            },
+        ).exec();
+        return result.modifiedCount;
     }
 }

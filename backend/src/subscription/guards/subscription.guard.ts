@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { SubscriptionService } from '../subscription.service';
 import { REQUIRES_FEATURE_KEY } from '../decorators/requires-feature.decorator';
-import { REQUIRES_BOOLEAN_FEATURE_KEY } from '../decorators/requires-boolean-feature.decorator';
+import { REQUIRES_BOOLEAN_FEATURE_KEY } from '../decorators/require-boolean-feature.decorator';
 
 @Injectable()
 export class SubscriptionGuard implements CanActivate {

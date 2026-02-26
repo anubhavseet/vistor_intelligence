@@ -31,6 +31,8 @@ export default function AdminSubscriptionsPage() {
     const [search, setSearch] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
     const [cancelConfirm, setCancelConfirm] = useState<string | null>(null)
+    // Pending plan assignment: { userId, planId } — requires explicit confirm click
+    const [pendingPlanAssign, setPendingPlanAssign] = useState<{ userId: string; planId: string; planName: string } | null>(null)
 
     const [isPlanModalOpen, setIsPlanModalOpen] = useState(false)
     const [editingPlan, setEditingPlan] = useState<any>(null)
@@ -76,6 +78,7 @@ export default function AdminSubscriptionsPage() {
         try {
             await adminAssignPlan({ variables: { userId, planId } })
             toast.success('Custom plan assigned successfully')
+            setPendingPlanAssign(null)
             refetch()
         } catch (err: any) { toast.error(err.message) }
     }
@@ -262,8 +265,12 @@ export default function AdminSubscriptionsPage() {
                                                                     <div className="text-xs text-gray-500">Assigning a custom plan will duplicate the base plan with modified limits.</div>
                                                                     <select
                                                                         className="w-full bg-[#0a0a0a] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-red-500/50"
+                                                                        defaultValue=""
                                                                         onChange={(e) => {
-                                                                            if (e.target.value) handleAssignCustomPlan(sub.userId, e.target.value);
+                                                                            if (!e.target.value) return;
+                                                                            const selected = adminPlans.find((p: any) => p.id === e.target.value);
+                                                                            setPendingPlanAssign({ userId: sub.userId, planId: e.target.value, planName: selected?.name || '' });
+                                                                            e.target.value = ''; // Reset dropdown
                                                                         }}
                                                                         disabled={assigning}
                                                                     >
@@ -293,6 +300,24 @@ export default function AdminSubscriptionsPage() {
                             <div className="py-16 text-center"><Receipt className="w-8 h-8 mx-auto mb-2 text-gray-700" /><p className="text-sm text-gray-500">No subscriptions found</p></div>
                         )}
                     </div>
+
+                    {/* Pending Plan Assignment Confirmation */}
+                    {pendingPlanAssign && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setPendingPlanAssign(null)}>
+                            <div onClick={(e) => e.stopPropagation()} className="bg-[#0a0a0a] border border-white/[0.08] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2 bg-purple-500/10 rounded-xl"><AlertTriangle className="w-5 h-5 text-purple-400" /></div>
+                                    <div><h3 className="font-semibold text-sm">Assign Custom Plan</h3><p className="text-xs text-gray-500">This will clone <span className="text-white font-medium">{pendingPlanAssign.planName}</span> as a custom plan for this user.</p></div>
+                                </div>
+                                <div className="flex justify-end gap-2 mt-6">
+                                    <button onClick={() => setPendingPlanAssign(null)} className="px-4 py-2 text-sm text-gray-400 hover:text-white rounded-lg cursor-pointer">Cancel</button>
+                                    <button onClick={() => handleAssignCustomPlan(pendingPlanAssign.userId, pendingPlanAssign.planId)} disabled={assigning} className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-500 text-white rounded-lg cursor-pointer disabled:opacity-50">
+                                        {assigning ? 'Assigning...' : 'Confirm Assign'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Cancel Confirmation */}
                     {cancelConfirm && (
@@ -391,9 +416,16 @@ export default function AdminSubscriptionsPage() {
                             <div>
                                 <h3 className="text-sm font-semibold mb-3 border-b border-white/[0.08] pb-2">Plan Features (Limits)</h3>
                                 <div className="grid grid-cols-2 gap-4">
-                                    {Object.keys(planForm.features).filter(k => !k.startsWith('enable')).map(key => (
+                                    {([
+                                        { key: 'maxSites', label: 'Max Sites (-1 = unlimited)' },
+                                        { key: 'maxWebhooks', label: 'Max Webhooks (-1 = unlimited)' },
+                                        { key: 'maxSessionsPerMonth', label: 'Sessions / Month (-1 = unlimited)' },
+                                        { key: 'maxAiCallsPerMonth', label: 'AI Calls / Month (-1 = unlimited)' },
+                                        { key: 'maxCrawlPages', label: 'Crawl Pages (-1 = unlimited)' },
+                                        { key: 'dataRetentionDays', label: 'Data Retention (days)' },
+                                    ] as { key: string; label: string }[]).map(({ key, label }) => (
                                         <div key={key}>
-                                            <label className="block text-xs text-gray-400 mb-1">{key}</label>
+                                            <label className="block text-xs text-gray-400 mb-1">{label}</label>
                                             <input type="number" value={(planForm.features as any)[key]} onChange={e => setPlanForm({ ...planForm, features: { ...planForm.features, [key]: parseInt(e.target.value) || 0 } })} className="w-full bg-[#0a0a0a] border border-white/[0.1] rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-red-500/50" />
                                         </div>
                                     ))}
@@ -402,9 +434,15 @@ export default function AdminSubscriptionsPage() {
                             <div>
                                 <h3 className="text-sm font-semibold mb-3 border-b border-white/[0.08] pb-2">Feature Flags</h3>
                                 <div className="grid grid-cols-2 gap-3">
-                                    {Object.keys(planForm.features).filter(k => k.startsWith('enable')).map(key => (
+                                    {([
+                                        { key: 'enableBehaviorTracking', label: 'Behavior Tracking' },
+                                        { key: 'enableGeoLocation', label: 'Geo Location' },
+                                        { key: 'enableUiInjection', label: 'UI Injection' },
+                                        { key: 'enableEnrichment', label: 'Enrichment' },
+                                        { key: 'enableCustomWebhooks', label: 'Custom Webhooks' },
+                                    ] as { key: string; label: string }[]).map(({ key, label }) => (
                                         <label key={key} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                                            <input type="checkbox" checked={(planForm.features as any)[key]} onChange={e => setPlanForm({ ...planForm, features: { ...planForm.features, [key]: e.target.checked } })} className="rounded bg-[#0a0a0a] border-white/[0.1] text-red-500 focus:ring-red-500 focus:ring-offset-[#0a0a0a] cursor-pointer" /> {key.replace('enable', '')}
+                                            <input type="checkbox" checked={(planForm.features as any)[key]} onChange={e => setPlanForm({ ...planForm, features: { ...planForm.features, [key]: e.target.checked } })} className="rounded bg-[#0a0a0a] border-white/[0.1] text-red-500 focus:ring-red-500 focus:ring-offset-[#0a0a0a] cursor-pointer" /> {label}
                                         </label>
                                     ))}
                                 </div>

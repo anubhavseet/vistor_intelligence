@@ -63,8 +63,8 @@ export class WebhookController {
                     await this.subscriptionService.handleSubscriptionActivated(razorpaySubId, subscriptionEntity);
                     break;
                 case 'subscription.updated':
-                    // Handle plan changes or quantity updates from Razorpay
-                    await this.subscriptionService.handleSubscriptionActivated(razorpaySubId, subscriptionEntity);
+                    // Dedicated handler for plan changes (separate from activation)
+                    await this.subscriptionService.handleSubscriptionUpdated(razorpaySubId, subscriptionEntity);
                     break;
                 case 'subscription.charged':
                     await this.subscriptionService.handleSubscriptionCharged(razorpaySubId, {
@@ -92,37 +92,42 @@ export class WebhookController {
                     await this.subscriptionService.handleSubscriptionPending(razorpaySubId);
                     break;
                 case 'invoice.paid':
-                    // Invoices carry the subscription ID too 
+                    // Invoices carry the subscription ID too
                     await this.subscriptionService.handleInvoicePaid(payload?.payload?.invoice?.entity);
                     break;
                 default:
                     this.logger.log(`Unhandled webhook event: ${event}`);
             }
 
-            res.status(200).json({ status: 'ok' });
-
-            // Log successful processing
+            // Write idempotency record BEFORE sending 200 — prevents duplicate processing if
+            // the process crashes between response and DB write (Bug 2 fix).
             await this.webhookEventModel.create({
                 eventId,
                 eventType: event,
                 razorpaySubId,
                 rawPayload: payload,
-                status: 'processed'
+                status: 'processed',
             });
+
+            res.status(200).json({ status: 'ok' });
         } catch (error: any) {
             this.logger.error(`Webhook processing error for event ${eventId}: ${error.message}`);
 
-            // Log failed processing
-            await this.webhookEventModel.create({
-                eventId,
-                eventType: event,
-                razorpaySubId,
-                rawPayload: payload,
-                status: 'failed',
-                errorReason: error.message
-            });
+            // Log failed processing (best-effort — do not throw if this write also fails)
+            try {
+                await this.webhookEventModel.create({
+                    eventId,
+                    eventType: event,
+                    razorpaySubId,
+                    rawPayload: payload,
+                    status: 'failed',
+                    errorReason: error.message,
+                });
+            } catch (logErr: any) {
+                this.logger.error(`Failed to write webhook failure log: ${logErr.message}`);
+            }
 
-            // Return 200 to prevent Razorpay retries for logic errors, unless it's a critical server issue we want retried
+            // Return 200 to prevent Razorpay retries for logic errors
             res.status(200).json({ status: 'error', message: error.message });
         }
     }
