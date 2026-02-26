@@ -7,12 +7,14 @@ import { SitesResolver } from './sites.resolver';
 import { SitesController } from './sites.controller';
 import { Site, SiteSchema } from '../common/schemas/site.schema';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Site.name, schema: SiteSchema }]),
     HttpModule,
     QdrantModule,
+    SubscriptionModule,
   ],
   controllers: [SitesController],
   providers: [SitesService, SitesResolver],

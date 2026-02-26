@@ -4,13 +4,14 @@ import { HttpModule } from '@nestjs/axios';
 import { WebhooksService } from './webhooks.service';
 import { WebhooksResolver } from './webhooks.resolver';
 import { Webhook, WebhookSchema } from '../common/schemas/webhook.schema';
-
+import { SubscriptionModule } from '../subscription/subscription.module';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Webhook.name, schema: WebhookSchema }]),
     HttpModule.register({ timeout: 5000 }),
+    SubscriptionModule,
   ],
   providers: [WebhooksService, WebhooksResolver],
   exports: [WebhooksService],
 })
-export class WebhooksModule {}
+export class WebhooksModule { }

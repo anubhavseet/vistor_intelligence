@@ -8,6 +8,7 @@ import { PageEvent, PageEventDocument } from '../common/schemas/page-event.schem
 import { hashIP, generateSessionId } from '../common/utils/crypto.util';
 import { SitesService } from '../sites/sites.service';
 import { IntentService, SignalBatch } from '../intent/intent.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 import { RawTrackingLog, RawTrackingLogDocument } from '../common/schemas/raw-tracking-log.schema';
 import { parseUserAgent } from '../common/utils/user-agent.util';
@@ -32,6 +33,7 @@ export class TrackingService {
     private rawTrackingLogModel: Model<RawTrackingLogDocument>,
     private sitesService: SitesService,
     private intentService: IntentService,
+    private subscriptionService: SubscriptionService,
   ) { }
 
   /**
@@ -72,6 +74,38 @@ export class TrackingService {
     }
 
     if (!session) {
+      // Feature Limit Check
+      // We must check if the site owner has exceeded their sessions bandwidth
+      const site = await this.sitesService.getSiteBySiteId(siteId);
+      const limitCheck = await this.subscriptionService.checkFeatureLimit(site.userId.toString(), 'maxSessionsPerMonth');
+
+      if (!limitCheck.allowed) {
+        // Limit reached: Still log raw data for compliance, but discard actionable session data
+        try {
+          await this.rawTrackingLogModel.create({
+            siteId,
+            sessionId: data.sessionId,
+            url: data.signals.url || '',
+            timestamp: new Date(),
+            raw_signals: data.signals,
+            ipHash: hashIP(data.ipAddress || '0.0.0.0'),
+            userAgent: data.userAgent
+          });
+        } catch (e) {
+          this.logger.error(`Failed to log raw signals for session ${data.sessionId}`, e);
+        }
+
+        // Return a dummy intent score so the tracker payload doesn't crash on the frontend
+        return {
+          intent_category: 'Bouncer',
+          current_score: 0,
+          suggested_action: null,
+          ui_payload: null
+        };
+      }
+
+      await this.subscriptionService.incrementUsage(site.userId.toString(), 'sessionsTracked');
+
       const ipHash = hashIP(data.ipAddress || '0.0.0.0');
       const uaInfo = parseUserAgent(data.userAgent || '');
 
@@ -288,6 +322,17 @@ export class TrackingService {
     let session = await this.visitorSessionModel.findOne({ sessionId, siteId });
 
     if (!session) {
+      // Feature Limit Check
+      const site = await this.sitesService.getSiteBySiteId(siteId);
+      const limitCheck = await this.subscriptionService.checkFeatureLimit(site.userId.toString(), 'maxSessionsPerMonth');
+
+      if (!limitCheck.allowed) {
+        // Limit reached: refuse to create session silently
+        return { sessionId };
+      }
+
+      await this.subscriptionService.incrementUsage(site.userId.toString(), 'sessionsTracked');
+
       session = await this.visitorSessionModel.create({
         sessionId,
         siteId,

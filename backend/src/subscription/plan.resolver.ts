@@ -3,35 +3,24 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { PlanService } from './plan.service';
 import { PlanType, CreatePlanInput, UpdatePlanInput } from './dto/subscription.types';
 
-function mapPlanToGraphQL(plan: any): PlanType {
-    return {
-        id: plan._id?.toString() || plan.id,
-        planId: plan.planId,
-        razorpayPlanId: plan.razorpayPlanId,
-        name: plan.name,
-        description: plan.description || '',
-        amount: plan.amount,
-        currency: plan.currency,
-        period: plan.period,
-        interval: plan.interval,
-        isActive: plan.isActive,
-        isCustom: plan.isCustom || false,
-        assignedUserId: plan.assignedUserId?.toString(),
-        features: plan.features || {},
-        sortOrder: plan.sortOrder || 0,
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-    };
-}
+import { mapPlanToGraphQL } from './subscription.mapper';
 
 @Resolver(() => PlanType)
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class PlanResolver {
     constructor(private planService: PlanService) { }
+
+    @Public()
+    @Query(() => [PlanType], { name: 'getPublicPlans' })
+    async getPublicPlans(): Promise<PlanType[]> {
+        const plans = await this.planService.findPublicPlans(); // Fetch only public, non-custom, active plans
+        return plans.map(mapPlanToGraphQL);
+    }
 
     @Query(() => [PlanType], { name: 'adminGetAllPlans' })
     async getAllPlans(): Promise<PlanType[]> {
@@ -50,6 +39,7 @@ export class PlanResolver {
             isCustom: input.isCustom,
             assignedUserId: input.assignedUserId,
             features: input.features as any,
+            trialDays: input.trialDays,
             sortOrder: input.sortOrder,
         });
         return mapPlanToGraphQL(plan);
@@ -65,6 +55,7 @@ export class PlanResolver {
             description: input.description,
             isActive: input.isActive,
             features: input.features as any,
+            trialDays: input.trialDays,
             sortOrder: input.sortOrder,
         });
         return mapPlanToGraphQL(plan);

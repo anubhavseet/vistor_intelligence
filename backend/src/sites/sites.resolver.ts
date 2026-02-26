@@ -9,11 +9,17 @@ import { Site } from './dto/site.type';
 import { CreateSiteInput } from './dto/create-site.input';
 import { UpdateSiteInput } from './dto/update-site.input';
 import { mapSiteToGraphQL, mapArrayToGraphQL } from '../common/utils/mappers.util';
+import { SubscriptionGuard } from '../subscription/guards/subscription.guard';
+import { RequiresFeature } from '../subscription/decorators/requires-feature.decorator';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Resolver(() => Site)
 @UseGuards(JwtAuthGuard)
 export class SitesResolver {
-  constructor(private sitesService: SitesService) { }
+  constructor(
+    private sitesService: SitesService,
+    private subscriptionService: SubscriptionService,
+  ) { }
 
   @Query(() => [Site])
   async getSites(@CurrentUser() user: any): Promise<Site[]> {
@@ -39,21 +45,27 @@ export class SitesResolver {
   }
 
   @Mutation(() => Site)
+  @UseGuards(SubscriptionGuard)
+  @RequiresFeature('maxSites')
   async registerClientSite(
     @Args('input') input: CreateSiteInput,
     @CurrentUser() user: any,
   ): Promise<Site> {
     const site = await this.sitesService.createSite(user.userId, input.name, input.domain);
+    await this.subscriptionService.incrementUsage(user.userId, 'sitesCreated');
     return mapSiteToGraphQL(site);
   }
 
   // Alias for createSite (for frontend compatibility)
   @Mutation(() => Site)
+  @UseGuards(SubscriptionGuard)
+  @RequiresFeature('maxSites')
   async createSite(
     @Args('input') input: CreateSiteInput,
     @CurrentUser() user: any,
   ): Promise<Site> {
     const site = await this.sitesService.createSite(user.userId, input.name, input.domain);
+    await this.subscriptionService.incrementUsage(user.userId, 'sitesCreated');
     return mapSiteToGraphQL(site);
   }
 
@@ -73,6 +85,7 @@ export class SitesResolver {
     @CurrentUser() user: any,
   ): Promise<boolean> {
     await this.sitesService.deleteSite(user.userId, siteId);
+    await this.subscriptionService.decrementUsage(user.userId, 'sitesCreated');
     return true;
   }
 

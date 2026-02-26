@@ -15,7 +15,7 @@ export class PlanService {
     ) { }
 
     async findAll(includeInactive = false): Promise<PlanDocument[]> {
-        const filter: any = {};
+        const filter: any = { isCustom: false };
         if (!includeInactive) filter.isActive = true;
         return this.planModel.find(filter).sort({ sortOrder: 1, amount: 1 }).exec();
     }
@@ -60,6 +60,7 @@ export class PlanService {
         isCustom?: boolean;
         assignedUserId?: string;
         features?: Partial<Plan['features']>;
+        trialDays?: number;
         sortOrder?: number;
     }): Promise<PlanDocument> {
         const planId = uuidv4();
@@ -111,6 +112,7 @@ export class PlanService {
                 enableCustomWebhooks: false,
                 ...input.features,
             },
+            trialDays: input.trialDays ?? 0,
             sortOrder: input.sortOrder ?? 0,
         });
 
@@ -122,6 +124,7 @@ export class PlanService {
         description?: string;
         isActive?: boolean;
         features?: Partial<Plan['features']>;
+        trialDays?: number;
         sortOrder?: number;
     }): Promise<PlanDocument> {
         const plan = await this.findById(id);
@@ -129,6 +132,7 @@ export class PlanService {
         if (input.name !== undefined) plan.name = input.name;
         if (input.description !== undefined) plan.description = input.description;
         if (input.isActive !== undefined) plan.isActive = input.isActive;
+        if (input.trialDays !== undefined) plan.trialDays = input.trialDays;
         if (input.sortOrder !== undefined) plan.sortOrder = input.sortOrder;
 
         if (input.features) {

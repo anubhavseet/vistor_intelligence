@@ -11,6 +11,7 @@ import { SitesModule } from '../sites/sites.module';
 import { EnrichmentModule } from '../enrichment/enrichment.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { IntentModule } from '../intent/intent.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 import { EnrichmentProcessor } from './processors/enrichment.processor';
 
 @Module({
@@ -27,6 +28,7 @@ import { EnrichmentProcessor } from './processors/enrichment.processor';
     EnrichmentModule,
     AccountsModule,
     IntentModule,
+    SubscriptionModule,
   ],
   controllers: [TrackingController],
   providers: [TrackingService, TrackingResolver, EnrichmentProcessor],

@@ -13,73 +13,11 @@ import {
     FeatureLimitCheckResponse,
 } from './dto/subscription.types';
 
-function mapPlanToGraphQL(plan: any): PlanType {
-    return {
-        id: plan._id?.toString() || plan.id,
-        planId: plan.planId,
-        razorpayPlanId: plan.razorpayPlanId,
-        name: plan.name,
-        description: plan.description || '',
-        amount: plan.amount,
-        currency: plan.currency,
-        period: plan.period,
-        interval: plan.interval,
-        isActive: plan.isActive,
-        isCustom: plan.isCustom || false,
-        assignedUserId: plan.assignedUserId?.toString(),
-        features: plan.features || {},
-        sortOrder: plan.sortOrder || 0,
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-    };
-}
-
-function mapSubscriptionToGraphQL(sub: any): SubscriptionType {
-    const plan = sub.planId && typeof sub.planId === 'object' ? sub.planId : null;
-    return {
-        id: sub._id?.toString() || sub.id,
-        subscriptionId: sub.subscriptionId,
-        razorpaySubscriptionId: sub.razorpaySubscriptionId,
-        userId: sub.userId?.toString(),
-        plan: plan ? mapPlanToGraphQL(plan) : undefined,
-        status: sub.status,
-        currentPeriodStart: sub.currentPeriodStart,
-        currentPeriodEnd: sub.currentPeriodEnd,
-        startedAt: sub.startedAt,
-        endedAt: sub.endedAt,
-        cancelledAt: sub.cancelledAt,
-        cancelAtPeriodEnd: sub.cancelAtPeriodEnd || false,
-        paidCount: sub.paidCount || 0,
-        shortUrl: sub.shortUrl,
-        currentUsage: sub.currentUsage || {
-            sitesCreated: 0,
-            webhooksCreated: 0,
-            sessionsTracked: 0,
-            aiCallsMade: 0,
-            crawlPagesUsed: 0,
-        },
-        createdAt: sub.createdAt,
-        updatedAt: sub.updatedAt,
-    };
-}
-
-function mapInvoiceToGraphQL(invoice: any): InvoiceType {
-    const plan = invoice.planId && typeof invoice.planId === 'object' ? invoice.planId : null;
-    return {
-        id: invoice._id?.toString() || invoice.id,
-        invoiceId: invoice.invoiceId,
-        razorpayPaymentId: invoice.razorpayPaymentId,
-        userId: invoice.userId?.toString(),
-        plan: plan ? mapPlanToGraphQL(plan) : undefined,
-        amount: invoice.amount,
-        currency: invoice.currency,
-        status: invoice.status,
-        billingPeriodStart: invoice.billingPeriodStart,
-        billingPeriodEnd: invoice.billingPeriodEnd,
-        paidAt: invoice.paidAt,
-        createdAt: invoice.createdAt,
-    };
-}
+import {
+    mapPlanToGraphQL,
+    mapSubscriptionToGraphQL,
+    mapInvoiceToGraphQL,
+} from './subscription.mapper';
 
 @Resolver(() => SubscriptionType)
 @UseGuards(JwtAuthGuard)
@@ -117,6 +55,14 @@ export class SubscriptionResolver {
         return this.subscriptionService.checkFeatureLimit(user.userId, feature);
     }
 
+    @Query(() => String, { name: 'getInvoiceDownloadUrl' })
+    async getInvoiceDownloadUrl(
+        @CurrentUser() user: any,
+        @Args('invoiceId') invoiceId: string,
+    ): Promise<string> {
+        return this.subscriptionService.getInvoiceDownloadUrl(user.userId, invoiceId);
+    }
+
     @Mutation(() => CreateSubscriptionResponse, { name: 'createSubscription' })
     async createSubscription(
         @CurrentUser() user: any,
@@ -142,6 +88,20 @@ export class SubscriptionResolver {
         return mapSubscriptionToGraphQL(sub);
     }
 
+    @Mutation(() => SubscriptionType, { name: 'cancelMySubscription' })
+    async cancelMySubscription(
+        @CurrentUser() user: any,
+    ): Promise<SubscriptionType> {
+        const activeSub = await this.subscriptionService.getActiveSubscription(user.userId);
+        if (!activeSub) {
+            throw new Error('No active subscription found');
+        }
+
+        // Always cancel at period end for user-initiated cancellations to allow graceful downgrade
+        const sub = await this.subscriptionService.cancelSubscription(activeSub.subscriptionId, user.userId, true);
+        return mapSubscriptionToGraphQL(sub);
+    }
+
     @Mutation(() => SubscriptionType, { name: 'pauseSubscription' })
     async pauseSubscription(
         @CurrentUser() user: any,
@@ -158,5 +118,20 @@ export class SubscriptionResolver {
     ): Promise<SubscriptionType> {
         const sub = await this.subscriptionService.resumeSubscription(subscriptionId, user.userId);
         return mapSubscriptionToGraphQL(sub);
+    }
+
+    @Mutation(() => CreateSubscriptionResponse, { name: 'changePlan' })
+    async changePlan(
+        @CurrentUser() user: any,
+        @Args('newPlanId') newPlanId: string,
+    ): Promise<CreateSubscriptionResponse> {
+        const sub = await this.subscriptionService.changePlan(user.userId, newPlanId);
+        return {
+            subscriptionId: sub.subscriptionId,
+            razorpaySubscriptionId: sub.razorpaySubscriptionId,
+            shortUrl: sub.shortUrl,
+            razorpayKeyId: this.razorpayService.getKeyId(),
+            status: sub.status,
+        };
     }
 }

@@ -89,6 +89,9 @@ export class Plan {
     metadata?: Record<string, any>;
 
     @Prop({ default: 0 })
+    trialDays: number;
+
+    @Prop({ default: 0 })
     sortOrder: number; // For display ordering
 }
 
