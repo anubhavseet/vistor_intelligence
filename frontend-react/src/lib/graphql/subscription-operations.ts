@@ -34,6 +34,7 @@ export const GET_MY_SUBSCRIPTION = gql`
           enableEnrichment
           enableCustomWebhooks
         }
+        trialDays
       }
       status
       currentPeriodStart
@@ -53,6 +54,38 @@ export const GET_MY_SUBSCRIPTION = gql`
       }
       createdAt
       updatedAt
+    }
+  }
+`
+
+export const GET_PUBLIC_PLANS = gql`
+  query GetPublicPlans {
+    getPublicPlans {
+      id
+      planId
+      name
+      description
+      amount
+      currency
+      period
+      interval
+      isActive
+      isCustom
+      features {
+        maxSites
+        maxWebhooks
+        maxSessionsPerMonth
+        maxAiCallsPerMonth
+        maxCrawlPages
+        dataRetentionDays
+        enableBehaviorTracking
+        enableGeoLocation
+        enableUiInjection
+        enableEnrichment
+        enableCustomWebhooks
+      }
+      trialDays
+      sortOrder
     }
   }
 `
@@ -83,6 +116,7 @@ export const GET_AVAILABLE_PLANS = gql`
         enableEnrichment
         enableCustomWebhooks
       }
+      trialDays
       sortOrder
     }
   }
@@ -106,8 +140,15 @@ export const GET_MY_INVOICES = gql`
       billingPeriodStart
       billingPeriodEnd
       paidAt
+      receiptUrl
       createdAt
     }
+  }
+`
+
+export const GET_INVOICE_DOWNLOAD_URL = gql`
+  query GetInvoiceDownloadUrl($invoiceId: String!) {
+    getInvoiceDownloadUrl(invoiceId: $invoiceId)
   }
 `
 
@@ -159,6 +200,18 @@ export const RESUME_SUBSCRIPTION = gql`
   }
 `
 
+export const CHANGE_PLAN = gql`
+  mutation ChangePlan($newPlanId: String!) {
+    changePlan(newPlanId: $newPlanId) {
+      subscriptionId
+      razorpaySubscriptionId
+      shortUrl
+      razorpayKeyId
+      status
+    }
+  }
+`
+
 // ============================================
 // ADMIN QUERIES
 // ============================================
@@ -191,6 +244,7 @@ export const ADMIN_GET_ALL_PLANS = gql`
         enableEnrichment
         enableCustomWebhooks
       }
+      trialDays
       sortOrder
       createdAt
       updatedAt
@@ -247,6 +301,7 @@ export const ADMIN_CREATE_PLAN = gql`
       name
       amount
       isActive
+      trialDays
     }
   }
 `
@@ -271,6 +326,7 @@ export const ADMIN_UPDATE_PLAN = gql`
         enableEnrichment
         enableCustomWebhooks
       }
+      trialDays
     }
   }
 `
@@ -278,6 +334,20 @@ export const ADMIN_UPDATE_PLAN = gql`
 export const ADMIN_DELETE_PLAN = gql`
   mutation AdminDeletePlan($id: ID!) {
     adminDeletePlan(id: $id)
+  }
+`
+
+export const ADMIN_ASSIGN_CUSTOM_PLAN = gql`
+  mutation AdminAssignCustomPlan($planId: String!, $userId: String!) {
+    adminAssignCustomPlan(planId: $planId, userId: $userId) {
+      id
+      planId
+      name
+      amount
+      isActive
+      isCustom
+      assignedUserId
+    }
   }
 `
 
@@ -296,112 +366,132 @@ export const ADMIN_CANCEL_SUBSCRIPTION = gql`
 // ============================================
 
 export interface PlanFeatures {
-    maxSites: number
-    maxWebhooks: number
-    maxSessionsPerMonth: number
-    maxAiCallsPerMonth: number
-    maxCrawlPages: number
-    dataRetentionDays: number
-    enableBehaviorTracking: boolean
-    enableGeoLocation: boolean
-    enableUiInjection: boolean
-    enableEnrichment: boolean
-    enableCustomWebhooks: boolean
+  maxSites: number
+  maxWebhooks: number
+  maxSessionsPerMonth: number
+  maxAiCallsPerMonth: number
+  maxCrawlPages: number
+  dataRetentionDays: number
+  enableBehaviorTracking: boolean
+  enableGeoLocation: boolean
+  enableUiInjection: boolean
+  enableEnrichment: boolean
+  enableCustomWebhooks: boolean
 }
 
 export interface SubscriptionPlan {
-    id: string
-    planId: string
-    razorpayPlanId?: string
-    name: string
-    description: string
-    amount: number
-    currency: string
-    period: 'monthly' | 'yearly'
-    interval: number
-    isActive: boolean
-    isCustom: boolean
-    assignedUserId?: string
-    features: PlanFeatures
-    sortOrder: number
-    createdAt?: string
-    updatedAt?: string
+  id: string
+  planId: string
+  razorpayPlanId?: string
+  name: string
+  description: string
+  amount: number
+  currency: string
+  period: 'monthly' | 'yearly'
+  interval: number
+  isActive: boolean
+  isCustom: boolean
+  assignedUserId?: string
+  features: PlanFeatures
+  trialDays: number
+  sortOrder: number
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface SubscriptionUsage {
-    sitesCreated: number
-    webhooksCreated: number
-    sessionsTracked: number
-    aiCallsMade: number
-    crawlPagesUsed: number
+  sitesCreated: number
+  webhooksCreated: number
+  sessionsTracked: number
+  aiCallsMade: number
+  crawlPagesUsed: number
 }
 
 export interface UserSubscription {
-    id: string
-    subscriptionId: string
-    razorpaySubscriptionId?: string
-    userId: string
-    plan?: SubscriptionPlan
-    status: string
-    currentPeriodStart?: string
-    currentPeriodEnd?: string
-    startedAt?: string
-    endedAt?: string
-    cancelledAt?: string
-    cancelAtPeriodEnd: boolean
-    paidCount: number
-    shortUrl?: string
-    currentUsage: SubscriptionUsage
-    createdAt: string
-    updatedAt: string
+  id: string
+  subscriptionId: string
+  razorpaySubscriptionId?: string
+  userId: string
+  plan?: SubscriptionPlan
+  status: string
+  currentPeriodStart?: string
+  currentPeriodEnd?: string
+  startedAt?: string
+  endedAt?: string
+  cancelledAt?: string
+  cancelAtPeriodEnd: boolean
+  paidCount: number
+  shortUrl?: string
+  currentUsage: SubscriptionUsage
+  createdAt: string
+  updatedAt: string
 }
 
 export interface SubscriptionInvoice {
-    id: string
-    invoiceId: string
-    razorpayPaymentId?: string
-    userId: string
-    plan?: { id: string; name: string; amount: number }
-    amount: number
-    currency: string
-    status: string
-    billingPeriodStart?: string
-    billingPeriodEnd?: string
-    paidAt?: string
-    createdAt: string
+  id: string
+  invoiceId: string
+  razorpayPaymentId?: string
+  userId: string
+  plan?: { id: string; name: string; amount: number }
+  amount: number
+  currency: string
+  status: string
+  billingPeriodStart?: string
+  billingPeriodEnd?: string
+  paidAt?: string
+  receiptUrl?: string
+  createdAt: string
 }
 
 export interface AdminSubscription extends UserSubscription {
-    userName?: string
-    userEmail?: string
+  userName?: string
+  userEmail?: string
 }
 
 export interface CreateSubscriptionResponse {
-    createSubscription: {
-        subscriptionId: string
-        razorpaySubscriptionId?: string
-        shortUrl?: string
-        razorpayKeyId: string
-        status: string
-    }
+  createSubscription: {
+    subscriptionId: string
+    razorpaySubscriptionId?: string
+    shortUrl?: string
+    razorpayKeyId: string
+    status: string
+  }
+}
+
+export interface ChangePlanResponse {
+  changePlan: {
+    subscriptionId: string
+    razorpaySubscriptionId?: string
+    shortUrl?: string
+    razorpayKeyId: string
+    status: string
+  }
 }
 
 export interface GetMySubscriptionResponse {
-    getMySubscription: UserSubscription | null
+  getMySubscription: UserSubscription | null
 }
 
 export interface GetAvailablePlansResponse {
-    getAvailablePlans: SubscriptionPlan[]
+  getAvailablePlans: SubscriptionPlan[]
+}
+
+export interface GetPublicPlansResponse {
+  getPublicPlans: SubscriptionPlan[]
 }
 
 export interface GetMyInvoicesResponse {
-    getMyInvoices: SubscriptionInvoice[]
+  getMyInvoices: SubscriptionInvoice[]
 }
 
 export interface AdminGetAllPlansResponse {
-    adminGetAllPlans: SubscriptionPlan[]
+  adminGetAllPlans: SubscriptionPlan[]
 }
 
 export interface AdminGetAllSubscriptionsResponse {
-    adminGetAllSubscriptions: AdminSubscription[]
+  adminGetAllSubscriptions: AdminSubscription[]
+}
+
+export interface GetInvoiceDownloadUrlResponse {
+  getInvoiceDownloadUrl: string
 }

@@ -14,6 +14,7 @@ import RegisterPage from '@/pages/Register'
 import PrivacyPolicyPage from '@/pages/PrivacyPolicy'
 import TermsOfServicePage from '@/pages/TermsOfService'
 import AboutPage from '@/pages/About'
+import PricingPage from '@/pages/Pricing'
 
 // Dashboard Pages
 import DashboardPage from '@/pages/Dashboard'
@@ -81,6 +82,7 @@ function App() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
 
           {/* Admin HQ Routes */}
           <Route path="/hq" element={<AdminLoginPage />} />

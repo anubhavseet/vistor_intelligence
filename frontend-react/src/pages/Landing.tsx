@@ -17,6 +17,8 @@ import {
     MousePointerClick
 } from 'lucide-react'
 
+import { PricingSection } from '@/components/PricingSection'
+
 // --- Components ---
 
 const Navbar = () => {
@@ -67,18 +69,22 @@ const Hero = () => {
     return (
         <section className="relative min-h-screen pt-32 pb-20 flex flex-col justify-center overflow-hidden">
             {/* Vercel-style Grid Background */}
-            <div className="absolute inset-0 bg-grid-small [mask-image:linear-gradient(to_bottom,white,transparent)] pointer-events-none" />
+            <div className="absolute inset-0 bg-grid-small [mask-image:linear-gradient(to_bottom,white,transparent)] pointer-events-none opacity-50" />
             <div className="absolute inset-0 hero-glow pointer-events-none" />
+
+            {/* Ambient glows */}
+            <div className="absolute top-1/4 left-1/4 w-[30rem] h-[30rem] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
+            <div className="absolute bottom-1/4 right-1/4 w-[30rem] h-[30rem] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
 
             <div className="container relative z-10 mx-auto px-6 text-center max-w-5xl">
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
-                    className="inline-flex items-center space-x-2 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-xs text-gray-400 mb-8 font-mono"
+                    className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 backdrop-blur-md text-xs text-blue-200 mb-8 font-mono shadow-[0_0_15px_rgba(59,130,246,0.2)]"
                 >
-                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                    <span>v2.0: Now with Intent Pattern Recognition</span>
+                    <span className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)] animate-pulse" />
+                    <span className="tracking-wide">v2.0: Now with Intent Pattern Recognition</span>
                 </motion.div>
 
                 <motion.h1
@@ -96,27 +102,28 @@ const Hero = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.2 }}
-                    className="text-xl text-gray-400 max-w-2xl mx-auto mb-12 leading-relaxed"
+                    className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed font-light"
                 >
-                    We analyze <span className="text-white">behavior patterns</span> to predict intent without invading privacy. Identification without surveillance.
+                    We analyze <span className="text-white font-medium shadow-white/20 drop-shadow-md">behavior patterns</span> to predict intent without invading privacy. Identification without surveillance.
                 </motion.p>
 
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.3 }}
-                    className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4 mb-20"
+                    className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6 mb-20 md:mb-32"
                 >
                     <Link
                         to="/register"
-                        className="h-12 px-8 rounded bg-white text-black font-semibold flex items-center justify-center space-x-2 hover:bg-gray-200 transition-colors w-full sm:w-auto"
+                        className="group relative h-14 px-8 rounded-lg bg-white text-black font-semibold flex items-center justify-center space-x-2 hover:bg-gray-100 transition-all duration-300 w-full sm:w-auto overflow-hidden shadow-[0_0_30px_rgba(255,255,255,0.2)]"
                     >
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-black/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out" />
                         <span>Start Deploying</span>
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </Link>
                     <Link
                         to="/contact"
-                        className="h-12 px-8 rounded border border-white/20 text-white font-medium flex items-center justify-center hover:bg-white/5 transition-colors w-full sm:w-auto"
+                        className="h-14 px-8 rounded-lg border border-white/20 text-white font-medium flex items-center justify-center hover:bg-white/10 hover:border-white/40 transition-all duration-300 w-full sm:w-auto backdrop-blur-sm"
                     >
                         Contact Sales
                     </Link>
@@ -849,79 +856,7 @@ const IntentStreamShowcase = () => {
     )
 }
 
-const Pricing = () => {
-    return (
-        <section id="pricing" className="py-32 bg-black relative">
-            <div className="max-w-7xl mx-auto px-6">
-                <div className="text-center mb-20">
-                    <motion.h2
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.5 }}
-                        className="text-4xl font-bold mb-6"
-                    >
-                        Simple, transparent pricing.
-                    </motion.h2>
-                    <p className="text-xl text-gray-400">Start for free, scale as you grow.</p>
-                </div>
-
-                <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-                    {/* Free Tier */}
-                    <div className="border border-white/10 rounded-xl bg-[#050505] p-8 flex flex-col">
-                        <div className="mb-4">
-                            <h3 className="text-lg font-bold">Unidentified</h3>
-                            <div className="text-3xl font-bold mt-2">$0<span className="text-sm font-normal text-gray-400">/mo</span></div>
-                        </div>
-                        <p className="text-gray-400 text-sm mb-6">For hobbyists and early stage startups.</p>
-                        <ul className="space-y-3 mb-8 flex-1">
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> 1,000 Monthly Visitors</li>
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> Basic Intent Scoring</li>
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> 7-day Data Retention</li>
-                        </ul>
-                        <Link to="/register" className="w-full py-2 rounded border border-white/20 text-center text-sm font-semibold hover:bg-white/5 transition-colors">Start Free</Link>
-                    </div>
-
-                    {/* Pro Tier */}
-                    <div className="border border-blue-500 rounded-xl bg-[#0A0A0A] p-8 flex flex-col relative shadow-[0_0_50px_rgba(0,112,243,0.1)]">
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-blue-500 text-black text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                            Most Popular
-                        </div>
-                        <div className="mb-4">
-                            <h3 className="text-lg font-bold text-white">Startup</h3>
-                            <div className="text-3xl font-bold mt-2">$149<span className="text-sm font-normal text-gray-400">/mo</span></div>
-                        </div>
-                        <p className="text-gray-400 text-sm mb-6">For growing teams engaging high-value leads.</p>
-                        <ul className="space-y-3 mb-8 flex-1">
-                            <li className="flex items-center text-sm text-white"><Check className="w-4 h-4 mr-2 text-blue-500" /> 50,000 Monthly Visitors</li>
-                            <li className="flex items-center text-sm text-white"><Check className="w-4 h-4 mr-2 text-blue-500" /> Advanced Intent Patterns</li>
-                            <li className="flex items-center text-sm text-white"><Check className="w-4 h-4 mr-2 text-blue-500" /> De-anonymization (IP to Company)</li>
-                            <li className="flex items-center text-sm text-white"><Check className="w-4 h-4 mr-2 text-blue-500" /> 1-Year Data Retention</li>
-                        </ul>
-                        <Link to="/register" className="w-full py-2 rounded bg-white text-black text-center text-sm font-semibold hover:bg-gray-200 transition-colors">Get Started</Link>
-                    </div>
-
-                    {/* Enterprise Tier */}
-                    <div className="border border-white/10 rounded-xl bg-[#050505] p-8 flex flex-col">
-                        <div className="mb-4">
-                            <h3 className="text-lg font-bold">Scale</h3>
-                            <div className="text-3xl font-bold mt-2">Custom</div>
-                        </div>
-                        <p className="text-gray-400 text-sm mb-6">For large organizations requiring SLA & security.</p>
-                        <ul className="space-y-3 mb-8 flex-1">
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> Unlimited Visitors</li>
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> Dedicated Success Manager</li>
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> Slack & Teams Alerts</li>
-                            <li className="flex items-center text-sm text-gray-300"><Check className="w-4 h-4 mr-2 text-white" /> Custom Contracts & SLA</li>
-                        </ul>
-                        <Link to="/contact" className="w-full py-2 rounded border border-white/20 text-center text-sm font-semibold hover:bg-white/5 transition-colors">Contact Sales</Link>
-                    </div>
-                </div>
-            </div>
-            <SectionBorder />
-        </section>
-    )
-}
+// Pricing replaced by PricingSection in @/components/PricingSection.tsx
 
 const CTA = () => {
     return (
@@ -1033,7 +968,7 @@ export default function LandingPage() {
             <AnalyticsSuite />
             <LiveMapShowcase />
             <IntentStreamShowcase />
-            <Pricing />
+            <PricingSection />
             <CTA />
             <Footer />
         </div>

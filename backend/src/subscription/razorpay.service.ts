@@ -68,6 +68,7 @@ export class RazorpayService {
         total_count: number;
         quantity?: number;
         customer_notify?: 0 | 1;
+        start_at?: number;
         notes?: Record<string, string>;
     }): Promise<any> {
         try {
@@ -84,9 +85,24 @@ export class RazorpayService {
         return this.razorpay.subscriptions.fetch(subscriptionId);
     }
 
+    async updateSubscription(subscriptionId: string, params: {
+        plan_id?: string;
+        quantity?: number;
+        offer_id?: string;
+    }): Promise<any> {
+        try {
+            const result = await this.razorpay.subscriptions.update(subscriptionId, params);
+            this.logger.log(`Updated Razorpay subscription: ${subscriptionId}`);
+            return result;
+        } catch (error: any) {
+            this.logger.error(`Failed to update Razorpay subscription: ${error.message}`);
+            throw error;
+        }
+    }
+
     async cancelSubscription(subscriptionId: string, cancelAtCycleEnd: boolean = false): Promise<any> {
         try {
-            const result = await this.razorpay.subscriptions.cancel(subscriptionId, cancelAtCycleEnd);
+            const result = await this.razorpay.subscriptions.cancel(subscriptionId, { cancel_at_cycle_end: cancelAtCycleEnd ? 1 : 0 });
             this.logger.log(`Cancelled Razorpay subscription: ${subscriptionId}`);
             return result;
         } catch (error: any) {
@@ -115,6 +131,10 @@ export class RazorpayService {
             this.logger.error(`Failed to resume Razorpay subscription: ${error.message}`);
             throw error;
         }
+    }
+
+    async fetchInvoice(invoiceId: string): Promise<any> {
+        return this.razorpay.invoices.fetch(invoiceId);
     }
 
     async fetchSubscriptionInvoices(subscriptionId: string): Promise<any> {

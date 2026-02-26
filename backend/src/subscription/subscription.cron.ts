@@ -13,26 +13,40 @@ export class SubscriptionCron {
     ) { }
 
     /**
-     * Reset monthly usage counters on the 1st of every month at 00:05
+     * Reset consumption metrics for subscriptions whose billing period has ended.
+     * This is a safety net for missed subscription.charged webhooks.
+     * Runs every hour to catch expired billing cycles promptly.
      */
-    @Cron('5 0 1 * *')
-    async resetMonthlyUsage(): Promise<void> {
-        this.logger.log('Running monthly usage reset...');
-        const count = await this.subscriptionService.resetMonthlyUsage();
-        this.logger.log(`Monthly usage reset complete. ${count} subscriptions updated.`);
+    @Cron(CronExpression.EVERY_HOUR)
+    async resetExpiredBillingCycleUsage(): Promise<void> {
+        const count = await this.subscriptionService.resetExpiredBillingCycleUsage();
+        if (count > 0) {
+            this.logger.log(`Billing cycle usage reset: ${count} subscriptions had consumption metrics reset.`);
+        }
     }
 
     /**
      * Clean up stale "created" subscriptions and expire completed ones
      * Runs every hour
      */
-    @Cron(CronExpression.EVERY_HOUR)
+    @Cron('30 * * * *') // Offset by 30 min from the reset cron
     async cleanupSubscriptions(): Promise<void> {
         const stale = await this.subscriptionService.cleanupStaleSubscriptions();
         const expired = await this.subscriptionService.expireCompletedSubscriptions();
         if (stale > 0 || expired > 0) {
             this.logger.log(`Cleanup: ${stale} stale subs expired, ${expired} period-end cancellations processed.`);
         }
+    }
+
+    /**
+     * Daily recalculation of resource-type usage (sites, webhooks) as an integrity check.
+     * Runs at 03:00 to avoid peak hours.
+     */
+    @Cron('0 3 * * *')
+    async recalculateUsage(): Promise<void> {
+        this.logger.log('Running daily usage recalculation...');
+        const count = await this.subscriptionService.recalculateAllUsage();
+        this.logger.log(`Usage recalculation complete. ${count} subscriptions reconciled.`);
     }
 
     /**

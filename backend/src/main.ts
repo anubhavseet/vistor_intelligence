@@ -20,7 +20,7 @@ async function bootstrap() {
   });
 
   // Set Global Prefix to match API Spec
-  app.setGlobalPrefix('api/v1');
+  // app.setGlobalPrefix('api/');
 
   // Global validation pipe
   app.useGlobalPipes(

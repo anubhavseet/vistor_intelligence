@@ -5,6 +5,7 @@ import { GeminiService } from '../ai-generation/gemini.service';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { IntentPromptsService } from './intent-prompts.service';
 import { SitesService } from '../sites/sites.service';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 export interface SignalBatch {
   dwell_time: Record<string, number>;
@@ -42,6 +43,7 @@ export class IntentService {
     private qdrantService: QdrantService,
     private intentPromptsService: IntentPromptsService,
     private sitesService: SitesService,
+    private subscriptionService: SubscriptionService,
   ) { }
 
   /**
@@ -200,6 +202,18 @@ export class IntentService {
 
     if (uiPayload && intentKey) {
       uiPayload.intent = intentKey;
+    }
+
+    // Track AI call usage if an actual AI generation was made
+    if (uiPayload) {
+      try {
+        const site = await this.sitesService.getSiteBySiteId(siteId);
+        if (site?.userId) {
+          await this.subscriptionService.incrementUsage(site.userId.toString(), 'aiCallsMade');
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to track AI call usage for site ${siteId}: ${e.message}`);
+      }
     }
 
     return { score, category, suggestedAction, uiPayload };

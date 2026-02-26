@@ -1,15 +1,19 @@
 import { Controller, Post, Req, Res, Logger, RawBodyRequest } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { RazorpayService } from './razorpay.service';
 import { SubscriptionService } from './subscription.service';
+import { WebhookEvent, WebhookEventDocument } from '../common/schemas/webhook-event.schema';
 
-@Controller('api/razorpay')
+@Controller('razorpay')
 export class WebhookController {
     private readonly logger = new Logger(WebhookController.name);
 
     constructor(
         private razorpayService: RazorpayService,
         private subscriptionService: SubscriptionService,
+        @InjectModel(WebhookEvent.name) private webhookEventModel: Model<WebhookEventDocument>,
     ) { }
 
     @Post('webhook')
@@ -18,11 +22,12 @@ export class WebhookController {
         @Res() res: Response,
     ): Promise<void> {
         const signature = req.headers['x-razorpay-signature'] as string;
+        const eventId = req.headers['x-razorpay-event-id'] as string;
         const rawBody = req.rawBody?.toString() || JSON.stringify(req.body);
 
-        // Verify webhook signature
-        if (signature && !this.razorpayService.verifyWebhookSignature(rawBody, signature)) {
-            this.logger.warn('Invalid webhook signature');
+        // Strict signature verification
+        if (!signature || !this.razorpayService.verifyWebhookSignature(rawBody, signature)) {
+            this.logger.warn('Invalid or missing webhook signature');
             res.status(400).json({ error: 'Invalid signature' });
             return;
         }
@@ -31,14 +36,23 @@ export class WebhookController {
         const event = payload?.event;
         const subscriptionEntity = payload?.payload?.subscription?.entity;
 
-        if (!event || !subscriptionEntity) {
-            this.logger.warn(`Webhook received with missing data. Event: ${event}`);
-            res.status(200).json({ status: 'ignored' });
+        if (!event || !eventId) {
+            this.logger.warn(`Webhook received with missing event or eventId.`);
+            res.status(400).json({ status: 'invalid_payload' });
             return;
         }
 
-        const razorpaySubId = subscriptionEntity.id;
-        this.logger.log(`Webhook received: ${event} for subscription ${razorpaySubId}`);
+        const razorpaySubId = subscriptionEntity?.id;
+
+        // Idempotency check: see if we already processed this exact event
+        const existingEvent = await this.webhookEventModel.findOne({ eventId });
+        if (existingEvent) {
+            this.logger.log(`Webhook event ${eventId} already processed (status: ${existingEvent.status}). Ignoring duplicate.`);
+            res.status(200).json({ status: 'duplicate_ignored' });
+            return;
+        }
+
+        this.logger.log(`Webhook received: ${event} for subscription ${razorpaySubId || 'Unknown'}`);
 
         try {
             switch (event) {
@@ -46,6 +60,10 @@ export class WebhookController {
                     await this.subscriptionService.handleSubscriptionAuthenticated(razorpaySubId);
                     break;
                 case 'subscription.activated':
+                    await this.subscriptionService.handleSubscriptionActivated(razorpaySubId, subscriptionEntity);
+                    break;
+                case 'subscription.updated':
+                    // Handle plan changes or quantity updates from Razorpay
                     await this.subscriptionService.handleSubscriptionActivated(razorpaySubId, subscriptionEntity);
                     break;
                 case 'subscription.charged':
@@ -73,14 +91,38 @@ export class WebhookController {
                 case 'subscription.pending':
                     await this.subscriptionService.handleSubscriptionPending(razorpaySubId);
                     break;
+                case 'invoice.paid':
+                    // Invoices carry the subscription ID too 
+                    await this.subscriptionService.handleInvoicePaid(payload?.payload?.invoice?.entity);
+                    break;
                 default:
                     this.logger.log(`Unhandled webhook event: ${event}`);
             }
 
             res.status(200).json({ status: 'ok' });
+
+            // Log successful processing
+            await this.webhookEventModel.create({
+                eventId,
+                eventType: event,
+                razorpaySubId,
+                rawPayload: payload,
+                status: 'processed'
+            });
         } catch (error: any) {
-            this.logger.error(`Webhook processing error: ${error.message}`);
-            // Return 200 to prevent Razorpay retries for logic errors
+            this.logger.error(`Webhook processing error for event ${eventId}: ${error.message}`);
+
+            // Log failed processing
+            await this.webhookEventModel.create({
+                eventId,
+                eventType: event,
+                razorpaySubId,
+                rawPayload: payload,
+                status: 'failed',
+                errorReason: error.message
+            });
+
+            // Return 200 to prevent Razorpay retries for logic errors, unless it's a critical server issue we want retried
             res.status(200).json({ status: 'error', message: error.message });
         }
     }

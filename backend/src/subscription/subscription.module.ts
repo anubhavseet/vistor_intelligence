@@ -3,6 +3,9 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Plan, PlanSchema } from '../common/schemas/plan.schema';
 import { Subscription, SubscriptionSchema } from '../common/schemas/subscription.schema';
 import { Invoice, InvoiceSchema } from '../common/schemas/invoice.schema';
+import { Site, SiteSchema } from '../common/schemas/site.schema';
+import { Webhook, WebhookSchema } from '../common/schemas/webhook.schema';
+import { WebhookEvent, WebhookEventSchema } from '../common/schemas/webhook-event.schema';
 import { RazorpayService } from './razorpay.service';
 import { PlanService } from './plan.service';
 import { SubscriptionService } from './subscription.service';
@@ -19,6 +22,9 @@ import { SubscriptionGuard } from './guards/subscription.guard';
             { name: Plan.name, schema: PlanSchema },
             { name: Subscription.name, schema: SubscriptionSchema },
             { name: Invoice.name, schema: InvoiceSchema },
+            { name: Site.name, schema: SiteSchema },
+            { name: Webhook.name, schema: WebhookSchema },
+            { name: WebhookEvent.name, schema: WebhookEventSchema },
         ]),
     ],
     controllers: [WebhookController],

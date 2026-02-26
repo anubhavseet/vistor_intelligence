@@ -4,6 +4,7 @@ import { IntentService } from './intent.service';
 import { QdrantModule } from '../qdrant/qdrant.module';
 import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { SitesModule } from '../sites/sites.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 import { IntentPrompt, IntentPromptSchema } from './schemas/intent-prompt.schema';
 import { IntentPromptsService } from './intent-prompts.service';
 import { IntentPromptsResolver } from './intent-prompts.resolver';
@@ -13,6 +14,7 @@ import { IntentPromptsResolver } from './intent-prompts.resolver';
     QdrantModule,
     AiGenerationModule,
     forwardRef(() => SitesModule),
+    forwardRef(() => SubscriptionModule),
     MongooseModule.forFeature([{ name: IntentPrompt.name, schema: IntentPromptSchema }])
   ],
   providers: [IntentService, IntentPromptsService, IntentPromptsResolver],

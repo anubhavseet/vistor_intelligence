@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { BullModule } from '@nestjs/bull';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -7,6 +7,7 @@ import { CrawlerResolver } from './crawler.resolver';
 import { WebsiteCrawlerProcessor } from './processors/website-crawler.processor';
 import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { QdrantModule } from '../qdrant/qdrant.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 import { CrawlJob, CrawlJobSchema } from '../common/schemas/crawl-job.schema';
 import { Site, SiteSchema } from '../common/schemas/site.schema';
 
@@ -21,6 +22,7 @@ import { Site, SiteSchema } from '../common/schemas/site.schema';
         ]),
         AiGenerationModule,
         QdrantModule,
+        forwardRef(() => SubscriptionModule),
     ],
     providers: [
         CrawlerService,

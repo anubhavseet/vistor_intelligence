@@ -8,6 +8,8 @@ import { CrawlJob, CrawlJobDocument, CrawlJobStatus } from '../common/schemas/cr
 import { StartCrawlInput } from './dto/start-crawl.input';
 import { CrawlJobStatus as CrawlStatusType } from './dto/crawl-status.type';
 import { QdrantService } from '../qdrant/qdrant.service';
+import { Site, SiteDocument } from '../common/schemas/site.schema';
+import { SubscriptionService } from '../subscription/subscription.service';
 
 @Injectable()
 export class CrawlerService {
@@ -16,7 +18,9 @@ export class CrawlerService {
     constructor(
         @InjectQueue('website-crawler') private crawlQueue: Queue,
         @InjectModel(CrawlJob.name) private crawlJobModel: Model<CrawlJobDocument>,
+        @InjectModel(Site.name) private siteModel: Model<SiteDocument>,
         private qdrantService: QdrantService,
+        private subscriptionService: SubscriptionService,
     ) { }
 
     /**
@@ -63,6 +67,16 @@ export class CrawlerService {
         });
 
         this.logger.log(`Crawl job ${jobId} queued successfully`);
+
+        // Track crawl page usage for the site owner
+        try {
+            const site = await this.siteModel.findOne({ siteId: input.siteId }).exec();
+            if (site?.userId) {
+                await this.subscriptionService.incrementUsage(site.userId.toString(), 'crawlPagesUsed');
+            }
+        } catch (e) {
+            this.logger.warn(`Failed to track crawl usage for site ${input.siteId}: ${e.message}`);
+        }
 
         return crawlJob;
     }

@@ -53,6 +53,7 @@ export class PlanType {
     @Field() isCustom: boolean;
     @Field({ nullable: true }) assignedUserId?: string;
     @Field(() => PlanFeaturesType) features: PlanFeaturesType;
+    @Field(() => Int) trialDays: number;
     @Field(() => Int) sortOrder: number;
     @Field() createdAt: Date;
     @Field() updatedAt: Date;
@@ -101,6 +102,7 @@ export class InvoiceType {
     @Field({ nullable: true }) billingPeriodStart?: Date;
     @Field({ nullable: true }) billingPeriodEnd?: Date;
     @Field({ nullable: true }) paidAt?: Date;
+    @Field({ nullable: true }) receiptUrl?: string;
     @Field() createdAt: Date;
 }
 
@@ -153,6 +155,7 @@ export class CreatePlanInput {
     @Field({ nullable: true }) isCustom?: boolean;
     @Field({ nullable: true }) assignedUserId?: string;
     @Field(() => PlanFeaturesInput, { nullable: true }) features?: PlanFeaturesInput;
+    @Field(() => Int, { nullable: true }) trialDays?: number;
     @Field(() => Int, { nullable: true }) sortOrder?: number;
 }
 
@@ -162,5 +165,6 @@ export class UpdatePlanInput {
     @Field({ nullable: true }) description?: string;
     @Field({ nullable: true }) isActive?: boolean;
     @Field(() => PlanFeaturesInput, { nullable: true }) features?: PlanFeaturesInput;
+    @Field(() => Int, { nullable: true }) trialDays?: number;
     @Field(() => Int, { nullable: true }) sortOrder?: number;
 }
