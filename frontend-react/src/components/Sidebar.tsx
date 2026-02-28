@@ -33,6 +33,8 @@ interface NavItem {
     requiresSite?: boolean
     badge?: string
     badgeColor?: string
+    /** Custom active check — overrides default matching when provided */
+    checkActive?: (pathname: string, search: string, currentSiteId?: string) => boolean
 }
 
 interface NavSection {
@@ -42,7 +44,7 @@ interface NavSection {
 
 export default function Sidebar({ currentSiteId }: SidebarProps) {
     const [collapsed, setCollapsed] = useState(false)
-    const { pathname } = useLocation()
+    const { pathname, search } = useLocation()
     const { user, logout } = useAuth()
     const navigate = useNavigate()
 
@@ -59,19 +61,33 @@ export default function Sidebar({ currentSiteId }: SidebarProps) {
                     name: 'Dashboard',
                     href: '/dashboard',
                     icon: LayoutDashboard,
-                    description: 'Overview & Stats'
+                    description: 'Overview & Stats',
+                    // Exact match only — never activate on sub-routes
+                    checkActive: (p) => p === '/dashboard'
                 },
                 {
                     name: 'Websites',
                     href: '/dashboard/sites',
                     icon: Globe,
-                    description: 'Manage Sites'
+                    description: 'Manage Sites',
+                    // Active on /dashboard/sites and /dashboard/sites/:id overview only.
+                    // NOT on /dashboard/sites/:id/analytics, /prompts, /settings etc.
+                    checkActive: (p) => {
+                        if (p === '/dashboard/sites') return true
+                        // /dashboard/sites/:id — the site overview page (no further sub-path)
+                        const m = p.match(/^\/dashboard\/sites\/([^/]+)$/)
+                        return !!m
+                    }
                 },
                 {
                     name: 'Intent Prompts',
                     href: currentSiteId ? `/dashboard/sites/${currentSiteId}/prompts` : '/dashboard/intent-prompts',
                     icon: MessageSquare,
-                    description: 'AI Behaviors'
+                    description: 'AI Behaviors',
+                    // Active on the generic page OR any site's prompts sub-route
+                    checkActive: (p) =>
+                        p === '/dashboard/intent-prompts' ||
+                        p.startsWith('/dashboard/sites/') && p.endsWith('/prompts')
                 }]
         },
         {
@@ -100,7 +116,19 @@ export default function Sidebar({ currentSiteId }: SidebarProps) {
                     href: currentSiteId ? `/dashboard/${currentSiteId}?tab=analytics` : '/dashboard',
                     icon: TrendingUp,
                     description: 'Reports & Insights',
-                    requiresSite: true
+                    requiresSite: true,
+                    // Also active when viewing the dedicated site analytics detail page
+                    checkActive: (p, s, siteId) => {
+                        // Dedicated analytics page: /dashboard/sites/:id/analytics
+                        if (/^\/dashboard\/sites\/[^/]+\/analytics$/.test(p)) return true
+                        // Generic list page
+                        if (p === '/dashboard/site-analytics') return true
+                        // Tab on the site detail page
+                        if (siteId && p.startsWith(`/dashboard/${siteId}`)) {
+                            return new URLSearchParams(s).get('tab') === 'analytics'
+                        }
+                        return false
+                    }
                 },
                 {
                     name: 'Accounts',
@@ -207,8 +235,30 @@ export default function Sidebar({ currentSiteId }: SidebarProps) {
                         )}
                         <div className="space-y-1">
                             {section.items.map((item) => {
-                                const isActive = pathname === item.href ||
-                                    (item.requiresSite && currentSiteId && pathname?.startsWith(`/dashboard/${currentSiteId}`))
+                                // Determine active state per item type
+                                let isActive = false
+                                if (item.checkActive) {
+                                    // Custom override — most specific, always wins
+                                    isActive = item.checkActive(pathname, search, currentSiteId)
+                                } else if (item.requiresSite && currentSiteId) {
+                                    // Site-tab items: match path prefix + tab query param
+                                    const siteBase = `/dashboard/${currentSiteId}`
+                                    const isOnSitePage = pathname?.startsWith(siteBase)
+                                    if (isOnSitePage) {
+                                        const itemUrl = new URL(item.href, 'http://x')
+                                        const itemTab = itemUrl.searchParams.get('tab')
+                                        const currentTab = new URLSearchParams(search).get('tab')
+                                        if (itemTab) {
+                                            isActive = currentTab === itemTab
+                                        } else {
+                                            // No tab param on item → active only when no tab in URL
+                                            isActive = !currentTab
+                                        }
+                                    }
+                                } else {
+                                    // Default: exact match
+                                    isActive = pathname === item.href
+                                }
                                 const isDisabled = item.requiresSite && !currentSiteId
 
                                 return (

@@ -26,9 +26,20 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
             name: "Sites",
             icon: Globe,
             children: [
-                { name: "All Sites", href: "/dashboard/sites", icon: Globe },
+                {
+                    name: "All Sites",
+                    href: "/dashboard/sites",
+                    icon: Globe,
+                    // Active on /dashboard/sites and /dashboard/sites/:id (overview), but NOT sub-pages like /analytics
+                    checkActive: (path) => path === '/dashboard/sites' || /^\/dashboard\/sites\/[^/]+$/.test(path)
+                },
                 { name: "Crawling", href: "/dashboard/crawling", icon: Globe },
-                { name: "Intent Prompts", href: "/dashboard/intent-prompts", icon: AmpersandIcon },
+                {
+                    name: "Intent Prompts",
+                    href: "/dashboard/intent-prompts",
+                    icon: AmpersandIcon,
+                    checkActive: (path) => path === '/dashboard/intent-prompts' || /^\/dashboard\/sites\/[^/]+\/prompts(\/.*)?$/.test(path)
+                },
                 { name: "Tracking Code", href: "/dashboard/tracking-code", icon: Code },
                 { name: "Integrations", href: "/dashboard/integrations", icon: Puzzle },
             ]
@@ -42,34 +53,7 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                     name: "Site Analytics",
                     href: "/dashboard/site-analytics",
                     icon: LineChart,
-                    checkActive: (path) => {
-                        // Check if it's strictly /dashboard/site-analytics
-                        if (path === '/dashboard/site-analytics') return true;
-
-                        // Check if it's a site detail page (/dashboard/:siteId)
-                        // but NOT one of the other reserved routes
-                        const parts = path.split('/');
-                        // parts: ['', 'dashboard', ':id']
-                        if (parts.length >= 3 && parts[1] === 'dashboard') {
-                            const id = parts[2];
-                            const reserved = [
-                                'sites',
-                                'crawling',
-                                'intent-prompts',
-                                'tracking-code',
-                                'integrations',
-                                'reports',
-                                'settings',
-                                'users',
-                                'site-analytics',
-                                'subscription',
-                                ''
-                            ];
-                            // If ID is not reserved, it's a site ID, so we are in Site Analytics view
-                            return !reserved.includes(id);
-                        }
-                        return false;
-                    }
+                    checkActive: (path) => path === '/dashboard/site-analytics' || /^\/dashboard\/sites\/[^/]+\/analytics(\/.*)?$/.test(path)
                 },
             ]
         },
@@ -77,7 +61,12 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
             name: "Management",
             icon: Settings,
             children: [
-                { name: "Settings", href: "/dashboard/settings", icon: Settings },
+                {
+                    name: "Settings",
+                    href: "/dashboard/settings",
+                    icon: Settings,
+                    checkActive: (path) => path === '/dashboard/settings' || /^\/dashboard\/sites\/[^/]+\/settings(\/.*)?$/.test(path)
+                },
                 { name: "Subscription", href: "/dashboard/subscription", icon: CreditCard },
             ]
         },
@@ -119,15 +108,16 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                                             key={child.name}
                                             to={child.href!}
                                             title={isCollapsed ? child.name : undefined}
-                                            className={({ isActive }) =>
-                                                cn(
+                                            className={({ isActive }) => {
+                                                const isMatched = child.checkActive ? child.checkActive(location.pathname) : isActive;
+                                                return cn(
                                                     "group flex items-center rounded-md py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                                     isCollapsed ? "justify-center px-0" : "px-2",
-                                                    isActive || (child.checkActive && child.checkActive(location.pathname))
+                                                    isMatched
                                                         ? "bg-gradient-to-r from-violet-500/10 to-indigo-500/10 text-violet-400 border-r-2 border-violet-500"
                                                         : "text-muted-foreground"
-                                                )
-                                            }
+                                                );
+                                            }}
                                         >
                                             {child.icon ? (
                                                 <child.icon className={cn("h-4 w-4 flex-shrink-0", isCollapsed ? "" : "mr-3")} />
@@ -148,15 +138,16 @@ export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
                             to={item.href!}
                             end={item.href === "/dashboard"}
                             title={isCollapsed ? item.name : undefined}
-                            className={({ isActive }) =>
-                                cn(
+                            className={({ isActive }) => {
+                                const isMatched = item.checkActive ? item.checkActive(location.pathname) : isActive;
+                                return cn(
                                     "group flex items-center rounded-md py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                                     isCollapsed ? "justify-center px-0" : "px-2",
-                                    isActive
+                                    isMatched
                                         ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/20"
                                         : "text-muted-foreground"
-                                )
-                            }
+                                );
+                            }}
                         >
                             <item.icon className={cn("h-5 w-5 flex-shrink-0", isCollapsed ? "" : "mr-3")} />
                             {!isCollapsed && <span className="truncate">{item.name}</span>}
