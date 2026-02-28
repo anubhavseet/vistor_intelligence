@@ -14,6 +14,10 @@ export interface SessionState {
     eventCount: number;
     isActive: boolean;
     vipAlertSent?: boolean;
+    injectionHistory?: string; // JSON: Array<{ id, type, intent, dismissed, interacted, converted, timestamp }>
+    engagementStage?: number;  // 0-3 for progressive engagement
+    chatHistory?: string;      // JSON: Array<{ role, text, timestamp }>
+    interestProfile?: string;  // JSON: { topics, pagesVisited, textCopied, timeOnPricing, objections }
 }
 
 /**
@@ -210,6 +214,206 @@ export class SessionManagerService {
         return await this.redis.scard(`site:${siteId}:sessions`);
     }
 
+    /**
+     * Add an injection record to the session's history
+     */
+    async addInjectionRecord(
+        sessionId: string,
+        record: { id: string; type: string; intent: string; timestamp: number },
+    ): Promise<void> {
+        const session = await this.getSession(sessionId);
+        if (!session) return;
+
+        let history: any[] = [];
+        try {
+            history = session.injectionHistory ? JSON.parse(session.injectionHistory) : [];
+        } catch (e) {
+            history = [];
+        }
+
+        history.push({
+            ...record,
+            dismissed: false,
+            interacted: false,
+            converted: false,
+        });
+
+        // Keep last 20 injection records
+        if (history.length > 20) history = history.slice(-20);
+
+        await this.updateSession(sessionId, {
+            injectionHistory: JSON.stringify(history),
+        });
+    }
+
+    /**
+     * Get injection history for a session
+     */
+    async getInjectionHistory(sessionId: string): Promise<any[]> {
+        const session = await this.getSession(sessionId);
+        if (!session || !session.injectionHistory) return [];
+        try {
+            return JSON.parse(session.injectionHistory);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * Update a specific injection record (e.g., mark as dismissed/interacted/converted)
+     */
+    async updateInjectionRecord(
+        sessionId: string,
+        injectionId: string,
+        updates: { dismissed?: boolean; interacted?: boolean; converted?: boolean },
+    ): Promise<void> {
+        const history = await this.getInjectionHistory(sessionId);
+        const record = history.find((r) => r.id === injectionId);
+        if (record) {
+            Object.assign(record, updates);
+            await this.updateSession(sessionId, {
+                injectionHistory: JSON.stringify(history),
+            });
+        }
+    }
+
+    /**
+     * Update engagement stage for progressive engagement
+     */
+    async updateEngagementStage(sessionId: string, stage: number): Promise<void> {
+        await this.updateSession(sessionId, { engagementStage: stage });
+    }
+
+    /**
+     * Add a chat message to the session's conversation history
+     */
+    async addChatMessage(
+        sessionId: string,
+        role: 'user' | 'assistant',
+        text: string,
+    ): Promise<void> {
+        const session = await this.getSession(sessionId);
+        if (!session) return;
+
+        let history: any[] = [];
+        try {
+            history = session.chatHistory ? JSON.parse(session.chatHistory) : [];
+        } catch (e) {
+            history = [];
+        }
+
+        history.push({ role, text, timestamp: Date.now() });
+
+        // Keep last 30 messages
+        if (history.length > 30) history = history.slice(-30);
+
+        await this.updateSession(sessionId, {
+            chatHistory: JSON.stringify(history),
+        });
+    }
+
+    /**
+     * Get chat history for a session
+     */
+    async getChatHistory(sessionId: string): Promise<Array<{ role: string; text: string; timestamp: number }>> {
+        const session = await this.getSession(sessionId);
+        if (!session || !session.chatHistory) return [];
+        try {
+            return JSON.parse(session.chatHistory);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * Update the accumulated interest profile for a session
+     * Called after each signal batch to build a rich visitor profile
+     */
+    async updateInterestProfile(
+        sessionId: string,
+        signals: {
+            url?: string;
+            text_selections?: string[];
+            copy_text?: string[];
+            dwell_time?: Record<string, number>;
+        },
+    ): Promise<void> {
+        const session = await this.getSession(sessionId);
+        if (!session) return;
+
+        let profile: any = { topics: [], pagesVisited: [], textCopied: [], timeOnPricing: 0, objections: [] };
+        try {
+            profile = session.interestProfile ? JSON.parse(session.interestProfile) : profile;
+        } catch (e) { }
+
+        // Accumulate pages
+        if (signals.url && !profile.pagesVisited.includes(signals.url)) {
+            profile.pagesVisited.push(signals.url);
+            if (profile.pagesVisited.length > 20) profile.pagesVisited = profile.pagesVisited.slice(-20);
+        }
+
+        // Accumulate text selections as topics
+        if (signals.text_selections) {
+            for (const sel of signals.text_selections) {
+                if (sel.length > 3 && sel.length < 100 && !profile.topics.includes(sel)) {
+                    profile.topics.push(sel);
+                }
+            }
+            if (profile.topics.length > 15) profile.topics = profile.topics.slice(-15);
+        }
+
+        // Accumulate copied text
+        if (signals.copy_text) {
+            for (const txt of signals.copy_text) {
+                if (!profile.textCopied.includes(txt)) {
+                    profile.textCopied.push(txt);
+                }
+            }
+            if (profile.textCopied.length > 10) profile.textCopied = profile.textCopied.slice(-10);
+        }
+
+        // Accumulate pricing dwell
+        if (signals.dwell_time) {
+            for (const [id, duration] of Object.entries(signals.dwell_time)) {
+                if (id.toLowerCase().includes('pricing') || id.toLowerCase().includes('price')) {
+                    profile.timeOnPricing += duration;
+                }
+            }
+        }
+
+        // Detect objections from behavioral patterns
+        if (signals.url) {
+            const urlLower = signals.url.toLowerCase();
+            if (urlLower.includes('competitor') || urlLower.includes('alternative') || urlLower.includes('vs')) {
+                if (!profile.objections.includes('comparing_alternatives')) {
+                    profile.objections.push('comparing_alternatives');
+                }
+            }
+            if (urlLower.includes('refund') || urlLower.includes('cancel')) {
+                if (!profile.objections.includes('risk_concerned')) {
+                    profile.objections.push('risk_concerned');
+                }
+            }
+        }
+
+        await this.updateSession(sessionId, {
+            interestProfile: JSON.stringify(profile),
+        });
+    }
+
+    /**
+     * Get interest profile for a session
+     */
+    async getInterestProfile(sessionId: string): Promise<any> {
+        const session = await this.getSession(sessionId);
+        if (!session || !session.interestProfile) return null;
+        try {
+            return JSON.parse(session.interestProfile);
+        } catch (e) {
+            return null;
+        }
+    }
+
     // Helper methods
     private getSessionKey(sessionId: string): string {
         return `session:${sessionId}:state`;
@@ -239,6 +443,10 @@ export class SessionManagerService {
             eventCount: parseInt(data.eventCount || '0'),
             isActive: data.isActive === 'true',
             vipAlertSent: data.vipAlertSent === 'true',
+            injectionHistory: data.injectionHistory || null,
+            engagementStage: parseInt(data.engagementStage || '0'),
+            chatHistory: data.chatHistory || null,
+            interestProfile: data.interestProfile || null,
         };
     }
 

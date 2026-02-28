@@ -11,6 +11,9 @@ import { VisitorSession, VisitorSessionSchema } from '../common/schemas/visitor-
 import { IntentModule } from '../intent/intent.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { EnrichmentModule } from '../enrichment/enrichment.module';
+import { AiGenerationModule } from '../ai-generation/ai-generation.module';
+import { QdrantModule } from '../qdrant/qdrant.module';
+import { SitesModule } from '../sites/sites.module';
 
 /**
  * WebSocket module for real-time visitor tracking via GraphQL subscriptions
@@ -20,6 +23,7 @@ import { EnrichmentModule } from '../enrichment/enrichment.module';
  * - Live session updates for admin dashboard
  * - Intent score streaming
  * - UI injection for personalization
+ * - AI Concierge chat agent
  * - Anomaly detection and alerts
  */
 @Module({
@@ -35,6 +39,9 @@ import { EnrichmentModule } from '../enrichment/enrichment.module';
         IntentModule,
         TrackingModule,
         EnrichmentModule,
+        AiGenerationModule,
+        QdrantModule,
+        SitesModule,
     ],
     providers: [
         // PubSub for GraphQL subscriptions

@@ -4,8 +4,11 @@ import { PubSub } from 'graphql-subscriptions';
 import { SessionManagerService } from './session-manager.service';
 import { StreamProcessingService } from './stream-processing.service';
 import { IntentService } from '../intent/intent.service';
-import { TrackingEventInput, TrackingEventResponse, LiveSessionUpdate, IntentUpdate, UIInjectionPayload } from './dto/websocket.types';
+import { TrackingEventInput, TrackingEventResponse, LiveSessionUpdate, IntentUpdate, UIInjectionPayload, ChatMessageInput, ChatResponse } from './dto/websocket.types';
 import { AdminAlertType } from '../analytics/dto/cohort.types';
+import { GeminiService } from '../ai-generation/gemini.service';
+import { QdrantService } from '../qdrant/qdrant.service';
+import { SitesService } from '../sites/sites.service';
 
 /**
  * GraphQL WebSocket Resolver for real-time tracking
@@ -20,6 +23,9 @@ export class WebSocketTrackingResolver {
         private sessionManager: SessionManagerService,
         private streamProcessor: StreamProcessingService,
         private intentService: IntentService,
+        private geminiService: GeminiService,
+        private qdrantService: QdrantService,
+        private sitesService: SitesService,
     ) { }
 
     /**
@@ -97,6 +103,16 @@ export class WebSocketTrackingResolver {
                 intentScore = intentResult.score;
                 uiPayload = intentResult.uiPayload;
 
+                // Phase 2: Accumulate interest profile on every signals_batch
+                if (eventType === 'signals_batch' && data) {
+                    await this.sessionManager.updateInterestProfile(sessionId, {
+                        url: data.url,
+                        text_selections: data.text_selections,
+                        copy_text: data.copy_text,
+                        dwell_time: data.dwell_time,
+                    });
+                }
+
                 // Publish intent update to subscriptions
                 await this.pubSub.publish('intentUpdate', {
                     intentUpdate: {
@@ -107,7 +123,7 @@ export class WebSocketTrackingResolver {
                     },
                 });
 
-                // If UI payload generated, publish it
+                // If UI payload generated, publish it and record in session
                 if (uiPayload) {
                     const payloadString = typeof uiPayload === 'string' ? uiPayload : JSON.stringify(uiPayload);
                     await this.pubSub.publish(`uiInjection:${sessionId}`, {
@@ -117,6 +133,17 @@ export class WebSocketTrackingResolver {
                             timestamp: Date.now(),
                         },
                     });
+
+                    // Record injection in session history
+                    const parsedPayload = typeof uiPayload === 'string' ? JSON.parse(uiPayload) : uiPayload;
+                    if (parsedPayload.id) {
+                        await this.sessionManager.addInjectionRecord(sessionId, {
+                            id: parsedPayload.id,
+                            type: parsedPayload.type || 'inject',
+                            intent: parsedPayload.intent || 'general',
+                            timestamp: Date.now(),
+                        });
+                    }
                 }
 
                 // Bug #13 fix: Auto-trigger VIP alert when score crosses 70 threshold.
@@ -147,6 +174,27 @@ export class WebSocketTrackingResolver {
                         { url: data?.url },
                         { score: intentResult.score, category: intentResult.category },
                     );
+                }
+            }
+
+            // Handle injection lifecycle events (Phase 5)
+            if (eventType === 'injection_interaction') {
+                if (data?.injection_id) {
+                    await this.sessionManager.updateInjectionRecord(sessionId, data.injection_id, { interacted: true });
+                    // Escalate engagement stage on positive interaction
+                    const currentSession = await this.sessionManager.getSession(sessionId);
+                    const currentStage = currentSession?.engagementStage || 0;
+                    if (currentStage < 3) {
+                        await this.sessionManager.updateEngagementStage(sessionId, currentStage + 1);
+                    }
+                }
+            } else if (eventType === 'injection_dismissed') {
+                if (data?.injection_id) {
+                    await this.sessionManager.updateInjectionRecord(sessionId, data.injection_id, { dismissed: true });
+                }
+            } else if (eventType === 'conversion') {
+                if (data?.lastInjectionId) {
+                    await this.sessionManager.updateInjectionRecord(sessionId, data.lastInjectionId, { converted: true });
                 }
             }
 
@@ -235,6 +283,13 @@ export class WebSocketTrackingResolver {
         return ['click', 'scroll', 'exit_intent', 'form_focus', 'pageview', 'signals_batch', 'rage_click'].includes(eventType);
     }
 
+    /**
+     * Check if event type is an injection lifecycle event
+     */
+    private isInjectionEvent(eventType: string): boolean {
+        return ['injection_interaction', 'injection_dismissed', 'conversion'].includes(eventType);
+    }
+
     private async updateIntentScore(
         sessionId: string,
         eventType: string,
@@ -271,15 +326,33 @@ export class WebSocketTrackingResolver {
             signals.events.push({ type: 'exit_intent', timestamp: Date.now() });
         }
 
-        // Calculate intent score using existing intent service
+        // Build engagement context for progressive engagement
+        const injectionHistory = await this.sessionManager.getInjectionHistory(sessionId);
+        const engagementContext = {
+            stage: session.engagementStage || 0,
+            injectionHistory,
+        };
+
+        // Calculate intent score using existing intent service (now with engagement context)
         const result = await this.intentService.analyzeAndGetUi(
             session.intentScore,
             signals,
             session.siteId,
+            engagementContext,
         );
 
         // Update session with new score
         await this.sessionManager.updateIntentScore(sessionId, result.score);
+
+        // Auto-escalate engagement stage based on score thresholds
+        const currentStage = session.engagementStage || 0;
+        let newStage = currentStage;
+        if (result.score >= 70 && currentStage < 3) newStage = 3;
+        else if (result.score >= 50 && currentStage < 2) newStage = 2;
+        else if (result.score >= 30 && currentStage < 1) newStage = 1;
+        if (newStage !== currentStage) {
+            await this.sessionManager.updateEngagementStage(sessionId, newStage);
+        }
 
         return {
             score: result.score,
@@ -338,5 +411,98 @@ export class WebSocketTrackingResolver {
                 severity: 'warning',
             },
         });
+    }
+
+    /**
+     * Mutation: AI Concierge Chat Message
+     * Receives visitor message, queries Qdrant for context, generates AI response
+     */
+    @Mutation(() => ChatResponse)
+    async chatMessage(
+        @Args('input') input: ChatMessageInput,
+    ): Promise<ChatResponse> {
+        const { sessionId, siteId, message } = input;
+        this.logger.log(`[Chat] Message from ${sessionId}: ${message.substring(0, 50)}...`);
+
+        try {
+            // 1. Store the user's message
+            await this.sessionManager.addChatMessage(sessionId, 'user', message);
+
+            // 2. Get conversation history
+            const chatHistory = await this.sessionManager.getChatHistory(sessionId);
+
+            // 3. Get site info
+            const site = await this.sitesService.getSiteBySiteId(siteId);
+            const siteName = site?.domain || 'this website';
+
+            // 4. Get visitor's interest profile
+            const interestProfile = await this.sessionManager.getInterestProfile(sessionId);
+
+            // 5. Get session for current page
+            const session = await this.sessionManager.getSession(sessionId);
+            const pageUrl = session?.currentPage || '';
+
+            // 6. Query Qdrant for relevant site content using the visitor's message
+            let siteContext = '';
+            try {
+                const embedding = await this.geminiService.generateEmbedding(message);
+                const filters = { must: [{ key: 'siteId', match: { value: siteId } }] };
+                const results = await this.qdrantService.search(embedding, filters, 3);
+                if (results.length > 0) {
+                    siteContext = results
+                        .map(r => r.payload?.raw_html || r.payload?.description || '')
+                        .filter(Boolean)
+                        .join('\n\n---\n\n');
+                }
+            } catch (e) {
+                this.logger.warn('[Chat] Qdrant search failed, proceeding without context', e.message);
+            }
+
+            // 7. Generate AI response
+            const aiResponse = await this.geminiService.generateChatResponse(
+                message,
+                chatHistory,
+                siteContext,
+                interestProfile,
+                siteName,
+                pageUrl,
+            );
+
+            // 8. Store the AI's response
+            await this.sessionManager.addChatMessage(sessionId, 'assistant', aiResponse.message);
+
+            const response: ChatResponse = {
+                sessionId,
+                message: aiResponse.message,
+                suggestedActions: JSON.stringify(aiResponse.suggestedActions),
+                timestamp: Date.now(),
+                shouldEscalate: aiResponse.shouldEscalate,
+            };
+
+            // 9. Publish chat response for subscription listeners
+            await this.pubSub.publish(`chatResponse:${sessionId}`, { chatResponse: response });
+
+            return response;
+        } catch (error) {
+            this.logger.error('[Chat] Error processing message', error);
+            return {
+                sessionId,
+                message: "I apologize, I'm having trouble right now. Could you try again in a moment?",
+                timestamp: Date.now(),
+            };
+        }
+    }
+
+    /**
+     * Subscription: Real-time chat responses
+     */
+    @Subscription(() => ChatResponse, {
+        filter: (payload, variables) =>
+            payload.chatResponse.sessionId === variables.sessionId,
+    })
+    chatResponse(
+        @Args('sessionId') sessionId: string,
+    ) {
+        return this.pubSub.asyncIterator(`chatResponse:${sessionId}`);
     }
 }

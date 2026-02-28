@@ -134,3 +134,39 @@ export class SessionStateType {
     @Field()
     isActive: boolean;
 }
+
+/**
+ * Chat message input for AI Concierge
+ */
+@InputType()
+export class ChatMessageInput {
+    @Field()
+    sessionId: string;
+
+    @Field()
+    siteId: string;
+
+    @Field()
+    message: string;
+}
+
+/**
+ * AI Chat response payload
+ */
+@ObjectType()
+export class ChatResponse {
+    @Field()
+    sessionId: string;
+
+    @Field()
+    message: string;
+
+    @Field({ nullable: true })
+    suggestedActions?: string; // JSON: [{ label, action, url }]
+
+    @Field(() => Float)
+    timestamp: number;
+
+    @Field({ nullable: true })
+    shouldEscalate?: boolean; // If AI thinks a human should take over
+}

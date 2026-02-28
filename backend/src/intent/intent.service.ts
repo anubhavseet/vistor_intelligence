@@ -32,6 +32,20 @@ export interface IntentResult {
   category: 'Bouncer' | 'Researcher' | 'Lead';
   suggestedAction: string | null;
   uiPayload?: any;
+  detectedIntents?: string[]; // New: all detected intent signals
+}
+
+export interface EngagementContext {
+  stage: number;                // 0-3
+  injectionHistory: Array<{
+    id: string;
+    type: string;
+    intent: string;
+    dismissed: boolean;
+    interacted: boolean;
+    converted: boolean;
+    timestamp: number;
+  }>;
 }
 
 @Injectable()
@@ -48,11 +62,13 @@ export class IntentService {
 
   /**
    * Calculate Real-time Intent Score and optionally generate AI UI
+   * Now accepts engagement context for progressive engagement and injection history
    */
   async analyzeAndGetUi(
     currentScore: number,
     signals: SignalBatch,
-    siteId: string
+    siteId: string,
+    engagementContext?: EngagementContext,
   ): Promise<IntentResult> {
 
     // 1. Calculate Score (Deterministic)
@@ -64,17 +80,43 @@ export class IntentService {
     const exitIntent = signals.events ? signals.events.find(e => e.type === 'exit_intent') : null;
     const isHesitating = signals.hesitation_event;
 
-    // Determine mapping to IntentPrompt keys
+    // Determine mapping to IntentPrompt keys (now with expanded detection)
     let intentKey: IntentCategory | null = null;
-    if (exitIntent) intentKey = IntentCategory.BOUNCE_RISK;
-    else if (isHesitating) intentKey = IntentCategory.HESITATION;
-    else if (category === 'Lead') intentKey = IntentCategory.HIGH_INTENT;
-    else if (category === 'Researcher') intentKey = IntentCategory.RESEARCHER;
+    const detectedIntents: string[] = [];
+
+    // Detect new intent categories
+    const hasPricingDwell = signals.dwell_time && Object.entries(signals.dwell_time)
+      .some(([id, duration]) => id.toLowerCase().includes('pricing') && duration > 10);
+    const hasFeatureDwell = signals.dwell_time && Object.entries(signals.dwell_time)
+      .some(([id, duration]) => (id.toLowerCase().includes('feature') || id.toLowerCase().includes('benefit')) && duration > 15);
+    const hasFeatureSelections = signals.text_selections && signals.text_selections.length > 0 && hasFeatureDwell;
+    const isConfused = (signals.rage_clicks > 2 || (signals.dead_clicks && signals.dead_clicks.length > 3))
+      && (!signals.scroll_depth || signals.scroll_depth < 30);
+
+    if (exitIntent) { intentKey = IntentCategory.BOUNCE_RISK; detectedIntents.push('bounce_risk'); }
+    if (isHesitating) { if (!intentKey) intentKey = IntentCategory.HESITATION; detectedIntents.push('hesitation'); }
+    if (isConfused) { if (!intentKey) intentKey = IntentCategory.CONFUSED; detectedIntents.push('confused'); }
+    if (hasPricingDwell) { if (!intentKey) intentKey = IntentCategory.PRICE_SENSITIVE; detectedIntents.push('price_sensitive'); }
+    if (hasFeatureSelections) { if (!intentKey) intentKey = IntentCategory.FEATURE_EVALUATOR; detectedIntents.push('feature_evaluator'); }
+    if (category === 'Lead') { if (!intentKey) intentKey = IntentCategory.HIGH_INTENT; detectedIntents.push('high_intent'); }
+    if (category === 'Researcher') { if (!intentKey) intentKey = IntentCategory.RESEARCHER; detectedIntents.push('researcher'); }
 
     // Check if we should trigger based on having a valid intent key or existing logic
     const shouldTriggerAi = intentKey || (category === 'Lead') || (suggestedAction !== null);
 
-    if (shouldTriggerAi) {
+    // Progressive engagement: check if we should skip based on stage and history
+    const stage = engagementContext?.stage || 0;
+    const history = engagementContext?.injectionHistory || [];
+    const recentDismissals = history.filter(h => h.dismissed && Date.now() - h.timestamp < 300000).length; // last 5 min
+    const shouldSkipDueToHistory = recentDismissals >= 2; // User dismissed 2+ in last 5 minutes
+
+    // Phase 3: Injection cooldown — minimum 60s between injections (exit_intent bypasses)
+    const lastInjection = history[history.length - 1];
+    const timeSinceLastInjection = lastInjection ? Date.now() - lastInjection.timestamp : Infinity;
+    const COOLDOWN_MS = 60000; // 1 minute minimum
+    const isCooldownActive = timeSinceLastInjection < COOLDOWN_MS && !exitIntent;
+
+    if (shouldTriggerAi && !shouldSkipDueToHistory && !isCooldownActive) {
       try {
         // Check site settings for pre-generated UI preference
         const site = await this.sitesService.getSiteBySiteId(siteId);
@@ -103,6 +145,13 @@ export class IntentService {
           // A. Understand Context
           let queryText = "General interest in product";
           const interests: string[] = [];
+
+          // Pre-compute mutation type for Gemini prompt
+          let targetMutationType = 'inject';
+          if (intentKey === IntentCategory.CONFUSED) targetMutationType = 'highlight';
+          else if (intentKey === IntentCategory.PRICE_SENSITIVE) targetMutationType = 'modify';
+          // Progressive engagement: limit to subtle types at early stages
+          if (stage <= 1 && targetMutationType === 'inject') targetMutationType = 'highlight';
 
           // 1. Text Copy (Strongest)
           if (signals.copy_text && signals.copy_text.length > 0) {
@@ -183,14 +232,16 @@ export class IntentService {
               instruction,
               (context.raw_html as string) || "",
               (context.description as string) || "Standard business website",
-              site.designSystem
+              site.designSystem,
+              targetMutationType,
             );
           } else {
             uiPayload = await this.geminiService.generateUiElement(
               instruction,
               "",
               "Standard business website",
-              site.designSystem
+              site.designSystem,
+              targetMutationType,
             );
           }
         }
@@ -202,6 +253,70 @@ export class IntentService {
 
     if (uiPayload && intentKey) {
       uiPayload.intent = intentKey;
+    }
+
+    // Enrich UI payload with injection metadata
+    // Bug 2 Fix: Trigger concierge chat when engagement is high enough
+    const conciergeSentThisSession = (engagementContext?.injectionHistory || []).some(h => h.type === 'concierge');
+    if (!uiPayload && stage >= 2 && score >= 50 && !conciergeSentThisSession) {
+      // Build a contextual greeting based on detected intents
+      let greeting = "Hi! 👋 I noticed you've been exploring — is there anything I can help you with?";
+      if (detectedIntents.includes('price_sensitive')) {
+        greeting = "Hi! 👋 I see you've been looking at our pricing. Happy to help you find the right plan for your needs!";
+      } else if (detectedIntents.includes('feature_evaluator')) {
+        greeting = "Hi! 👋 I noticed you're comparing features. Want me to help you understand which option fits best?";
+      } else if (detectedIntents.includes('confused')) {
+        greeting = "Hi! 👋 It looks like you might have some questions — I'm here to help if you need anything!";
+      } else if (detectedIntents.includes('researcher')) {
+        greeting = "Hi! 👋 Doing some research? I can help you find the specific information you're looking for.";
+      }
+
+      uiPayload = {
+        injection_target_selector: 'body',
+        html_payload: greeting,
+        scoped_css: '',
+        javascript_payload: '',
+        intent: intentKey || 'general',
+        type: 'concierge',
+      };
+      this.logger.log(`[Concierge] Triggering chat widget for session (stage: ${stage}, score: ${score})`);
+    }
+
+    if (uiPayload) {
+      const injectionId = `inj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+      // Determine mutation type based on intent
+      let mutationType = uiPayload.type || 'inject'; // Use pre-computed if set during generation
+      let persistence = 'session';
+      let priority = 5;
+
+      if (intentKey === IntentCategory.CONFUSED) {
+        mutationType = 'highlight';
+        persistence = 'page';
+        priority = 8;
+      } else if (intentKey === IntentCategory.PRICE_SENSITIVE) {
+        mutationType = 'modify';
+        persistence = 'page';
+        priority = 7;
+      } else if (intentKey === IntentCategory.BOUNCE_RISK && exitIntent) {
+        mutationType = 'inject'; // exit intent still uses overlay
+        persistence = 'session';
+        priority = 10;
+      } else if (intentKey === IntentCategory.FEATURE_EVALUATOR) {
+        mutationType = 'inject'; // sidebar with case studies
+        persistence = 'session';
+        priority = 6;
+      } else if (intentKey === IntentCategory.HIGH_INTENT) {
+        priority = 9;
+      }
+
+      // Note: progressive engagement override already handled pre-Gemini at line 154
+      // so Gemini generates content appropriate for the mutation type
+
+      uiPayload.id = injectionId;
+      uiPayload.type = mutationType;
+      uiPayload.persistence = persistence;
+      uiPayload.priority = priority;
     }
 
     // Track AI call usage if an actual AI generation was made
@@ -216,7 +331,7 @@ export class IntentService {
       }
     }
 
-    return { score, category, suggestedAction, uiPayload };
+    return { score, category, suggestedAction, uiPayload, detectedIntents };
   }
 
   /**

@@ -6,6 +6,10 @@ export enum IntentCategory {
     HESITATION = 'hesitation',
     RESEARCHER = 'researcher',
     GENERAL = 'general',
+    PRICE_SENSITIVE = 'price_sensitive',
+    FEATURE_EVALUATOR = 'feature_evaluator',
+    CONFUSED = 'confused',
+    RETURN_VISITOR = 'return_visitor',
 }
 
 registerEnumType(IntentCategory, {
