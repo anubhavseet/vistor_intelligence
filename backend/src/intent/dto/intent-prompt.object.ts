@@ -27,6 +27,15 @@ export class IntentPrompt {
     @Field({ nullable: true })
     generatedJs?: string;
 
+    @Field({ nullable: true })
+    generatedTargetSelector?: string;
+
+    @Field({ nullable: true })
+    generatedInjectionPosition?: string;
+
+    @Field({ defaultValue: 'popup' })
+    injectionMode: string;
+
     @Field()
     isActive: boolean;
 
@@ -48,5 +57,26 @@ export class IntentPreview {
 
     @Field()
     js: string;
+
+    @Field({ nullable: true })
+    targetSelector?: string;
+
+    @Field({ nullable: true })
+    injectionPosition?: string;
 }
 
+/** Full page preview — returns the crawled site HTML with the component injected inline */
+@ObjectType()
+export class IntentPagePreview {
+    @Field()
+    pageHtml: string; // Full assembled HTML to drop into an iframe srcdoc
+
+    @Field({ nullable: true })
+    targetSelector?: string;
+
+    @Field({ nullable: true })
+    injectionPosition?: string;
+
+    @Field({ defaultValue: 'popup' })
+    injectionMode: string;
+}

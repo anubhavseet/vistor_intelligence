@@ -127,13 +127,29 @@ export class IntentService {
           const customPrompt = await this.intentPromptsService.getPromptForIntent(siteId, intentKey);
 
           if (customPrompt && customPrompt.generatedHtml) {
-            this.logger.log(`Using pre-generated UI for intent '${intentKey}'`);
-            uiPayload = {
-              injection_target_selector: 'body',
-              html_payload: customPrompt.generatedHtml,
-              scoped_css: customPrompt.generatedCss || '',
-              javascript_payload: customPrompt.generatedJs || ''
-            };
+            this.logger.log(`Using pre-generated UI for intent '${intentKey}' (mode: ${(customPrompt as any).injectionMode || 'popup'})`);
+            const promptMode = (customPrompt as any).injectionMode || 'popup';
+            const storedSelector = (customPrompt as any).generatedTargetSelector;
+            const storedPosition = (customPrompt as any).generatedInjectionPosition;
+
+            // If inline mode but no selector stored (old document), fall through to
+            // on-the-fly generation so Gemini picks the correct injection target.
+            if (promptMode === 'inline' && !storedSelector) {
+              this.logger.warn(`Inline mode set but no generatedTargetSelector stored for intent '${intentKey}'. Regenerating with inline_inject type.`);
+              usePreGenerated = false;
+              // Persist the mode so on-the-fly generation uses inline_inject
+              (signals as any).__promptMode = promptMode;
+            } else {
+              uiPayload = {
+                injection_target_selector: storedSelector || 'body',
+                injection_position: storedPosition || 'afterend',
+                html_payload: customPrompt.generatedHtml,
+                scoped_css: customPrompt.generatedCss || '',
+                javascript_payload: customPrompt.generatedJs || '',
+                // Mark type early so the override block below respects it
+                type: promptMode === 'inline' ? 'inline_inject' : 'inject',
+              } as any;
+            }
           } else {
             this.logger.warn(`No pre-generated UI found for intent '${intentKey}', falling back to on-the-go generation`);
             usePreGenerated = false; // Fallback to on-the-go generation
@@ -147,9 +163,16 @@ export class IntentService {
           const interests: string[] = [];
 
           // Pre-compute mutation type for Gemini prompt
+          // Check if the stored prompt has an injectionMode override
           let targetMutationType = 'inject';
-          if (intentKey === IntentCategory.CONFUSED) targetMutationType = 'highlight';
-          else if (intentKey === IntentCategory.PRICE_SENSITIVE) targetMutationType = 'modify';
+          const storedModeOverride = (signals as any).__promptMode;
+          if (storedModeOverride === 'inline') {
+            targetMutationType = 'inline_inject';
+          } else if (intentKey === IntentCategory.CONFUSED) {
+            targetMutationType = 'highlight';
+          } else if (intentKey === IntentCategory.PRICE_SENSITIVE) {
+            targetMutationType = 'modify';
+          }
           // Progressive engagement: limit to subtle types at early stages
           if (stage <= 1 && targetMutationType === 'inject') targetMutationType = 'highlight';
 
@@ -234,6 +257,7 @@ export class IntentService {
               (context.description as string) || "Standard business website",
               site.designSystem,
               targetMutationType,
+              intentKey,
             );
           } else {
             uiPayload = await this.geminiService.generateUiElement(
@@ -242,7 +266,13 @@ export class IntentService {
               "Standard business website",
               site.designSystem,
               targetMutationType,
+              intentKey,
             );
+          }
+
+          // Ensure the intended mutation type is preserved
+          if (uiPayload) {
+            uiPayload.type = targetMutationType;
           }
         }
 
@@ -251,8 +281,8 @@ export class IntentService {
       }
     }
 
-    if (uiPayload && intentKey) {
-      uiPayload.intent = intentKey;
+    if (uiPayload) {
+      uiPayload.intent = intentKey || 'general';
     }
 
     // Enrich UI payload with injection metadata
@@ -290,24 +320,35 @@ export class IntentService {
       let persistence = 'session';
       let priority = 5;
 
-      if (intentKey === IntentCategory.CONFUSED) {
-        mutationType = 'highlight';
-        persistence = 'page';
-        priority = 8;
-      } else if (intentKey === IntentCategory.PRICE_SENSITIVE) {
-        mutationType = 'modify';
-        persistence = 'page';
-        priority = 7;
-      } else if (intentKey === IntentCategory.BOUNCE_RISK && exitIntent) {
-        mutationType = 'inject'; // exit intent still uses overlay
-        persistence = 'session';
-        priority = 10;
-      } else if (intentKey === IntentCategory.FEATURE_EVALUATOR) {
-        mutationType = 'inject'; // sidebar with case studies
-        persistence = 'session';
-        priority = 6;
-      } else if (intentKey === IntentCategory.HIGH_INTENT) {
-        priority = 9;
+      // Only override mutationType from intent-level defaults if the payload
+      // doesn't already have a type set (e.g. from a user-configured injectionMode).
+      const typeAlreadySet = !!(uiPayload as any).type && (uiPayload as any).type !== 'inject';
+
+      if (!typeAlreadySet) {
+        if (intentKey === IntentCategory.CONFUSED) {
+          mutationType = 'highlight';
+          persistence = 'page';
+          priority = 8;
+        } else if (intentKey === IntentCategory.PRICE_SENSITIVE) {
+          mutationType = 'modify';
+          persistence = 'page';
+          priority = 7;
+        } else if (intentKey === IntentCategory.BOUNCE_RISK && exitIntent) {
+          mutationType = 'inject';
+          persistence = 'session';
+          priority = 10;
+        } else if (intentKey === IntentCategory.FEATURE_EVALUATOR || (uiPayload && uiPayload.injection_target_selector && uiPayload.injection_target_selector !== 'body')) {
+          // Default to inline_inject for targeted content components so they persist
+          mutationType = 'inline_inject';
+          persistence = 'session';
+          priority = 6;
+        } else if (intentKey === IntentCategory.HIGH_INTENT) {
+          priority = 9;
+        }
+      } else {
+        // Type already determined by user config — just set intent-appropriate priority
+        if (intentKey === IntentCategory.HIGH_INTENT) priority = 9;
+        else if (intentKey === IntentCategory.BOUNCE_RISK) priority = 10;
       }
 
       // Note: progressive engagement override already handled pre-Gemini at line 154

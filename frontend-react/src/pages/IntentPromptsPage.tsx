@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { useQuery, useMutation } from '@apollo/client/react'
+import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react'
 import { toast } from 'react-toastify'
 import {
     GET_INTENT_PROMPTS,
@@ -8,8 +8,10 @@ import {
     UPDATE_INTENT_PROMPT,
     DELETE_INTENT_PROMPT,
     GENERATE_PROMPT_PREVIEW,
+    GET_INTENT_PROMPT_PAGE_PREVIEW,
     type IntentPrompt,
-    type GeneratePromptPreviewResult
+    type GeneratePromptPreviewResult,
+    type IntentPagePreviewResult
 } from '@/lib/graphql/intent-prompts'
 import {
     Plus,
@@ -42,9 +44,12 @@ export default function IntentPromptsPage() {
         generatedHtml: '',
         generatedCss: '',
         generatedJs: '',
-        isActive: true
+        isActive: true,
+        injectionMode: 'popup' as 'popup' | 'inline'
     })
-    const [activeTab, setActiveTab] = useState<'preview' | 'html' | 'css' | 'js'>('preview')
+    const [activeTab, setActiveTab] = useState<'preview' | 'page_preview' | 'html' | 'css' | 'js'>('preview')
+    const [pagePreviewHtml, setPagePreviewHtml] = useState<string | null>(null)
+    const [loadingPagePreview, setLoadingPagePreview] = useState(false)
 
     const { data, loading, error, refetch } = useQuery<{ getIntentPrompts: IntentPrompt[] }>(GET_INTENT_PROMPTS, {
         variables: { siteId },
@@ -93,6 +98,10 @@ export default function IntentPromptsPage() {
         onError: (err: Error) => toast.error('Failed to generate preview: ' + err.message)
     })
 
+    const [fetchPagePreview] = useLazyQuery<{ getIntentPromptPagePreview: IntentPagePreviewResult }>(GET_INTENT_PROMPT_PAGE_PREVIEW, {
+        fetchPolicy: 'network-only',
+    })
+
     const resetForm = () => {
         setFormData({
             intent: IntentCategory.HIGH_INTENT,
@@ -101,10 +110,12 @@ export default function IntentPromptsPage() {
             generatedHtml: '',
             generatedCss: '',
             generatedJs: '',
-            isActive: true
+            isActive: true,
+            injectionMode: 'popup'
         })
         setActiveTab('preview')
         setShowFullPreview(false)
+        setPagePreviewHtml(null)
     }
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -122,7 +133,8 @@ export default function IntentPromptsPage() {
                         isActive: formData.isActive,
                         generatedHtml: formData.generatedHtml,
                         generatedCss: formData.generatedCss,
-                        generatedJs: formData.generatedJs
+                        generatedJs: formData.generatedJs,
+                        injectionMode: formData.injectionMode,
                     }
                 }
             })
@@ -135,7 +147,8 @@ export default function IntentPromptsPage() {
                         intent: formData.intent,
                         prompt: formData.prompt,
                         description: formData.description,
-                        isActive: formData.isActive
+                        isActive: formData.isActive,
+                        injectionMode: formData.injectionMode,
                     }
                 }
             })
@@ -143,7 +156,15 @@ export default function IntentPromptsPage() {
     }
 
     const startEdit = (prompt: IntentPrompt) => {
-        setEditingId(prompt.id)
+        setEditingId(prompt.id);
+
+        if (prompt.injectionMode === 'inline' && prompt.generatedHtml) {
+            setActiveTab('page_preview');
+            setTimeout(() => handlePagePreview(prompt.id), 100);
+        } else {
+            setActiveTab('preview');
+        }
+
         setFormData({
             intent: prompt.intent as IntentCategory,
             prompt: prompt.prompt,
@@ -151,7 +172,8 @@ export default function IntentPromptsPage() {
             generatedHtml: prompt.generatedHtml || '',
             generatedCss: prompt.generatedCss || '',
             generatedJs: prompt.generatedJs || '',
-            isActive: prompt.isActive
+            isActive: prompt.isActive,
+            injectionMode: (prompt.injectionMode as 'popup' | 'inline') || 'popup'
         })
         setIsCreating(true)
     }
@@ -171,10 +193,29 @@ export default function IntentPromptsPage() {
             variables: {
                 siteId,
                 intent: formData.intent,
-                prompt: formData.prompt
+                prompt: formData.prompt,
+                injectionMode: formData.injectionMode,
+                // If editing an existing prompt, persist the generated result back to DB
+                promptId: editingId || undefined,
             }
         })
     }
+
+    const handlePagePreview = async (promptId: string) => {
+        if (!siteId || !promptId) return
+        setLoadingPagePreview(true)
+        setActiveTab('page_preview')
+        try {
+            const { data, error } = await fetchPagePreview({ variables: { siteId, promptId } })
+            if (error) throw error
+            setPagePreviewHtml(data?.getIntentPromptPagePreview?.pageHtml || '')
+        } catch (e: any) {
+            toast.error('Page preview failed: ' + (e?.message || 'Unknown error'))
+        } finally {
+            setLoadingPagePreview(false)
+        }
+    }
+
 
     const formatHtml = () => {
         if (!formData.generatedHtml) return;
@@ -400,6 +441,33 @@ export default function IntentPromptsPage() {
                                 </select>
                             </div>
                             <div>
+                                <label className="block text-sm font-medium mb-1">Injection Mode</label>
+                                <div className="flex items-center gap-2 h-10">
+                                    <div className="flex rounded-md border border-input overflow-hidden text-sm">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, injectionMode: 'popup' })}
+                                            className={cn('px-3 py-2 transition-colors', formData.injectionMode === 'popup' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted')}
+                                        >
+                                            Popup
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, injectionMode: 'inline' })}
+                                            className={cn('px-3 py-2 transition-colors border-l border-input', formData.injectionMode === 'inline' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted')}
+                                        >
+                                            Inline
+                                        </button>
+                                    </div>
+                                    <span className="text-xs text-muted-foreground">
+                                        {formData.injectionMode === 'inline' ? 'Flows in page content' : 'Fixed overlay popup'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                            <div>
                                 <label className="block text-sm font-medium mb-1">Status</label>
                                 <div className="flex items-center space-x-2 h-10">
                                     <button
@@ -454,110 +522,154 @@ export default function IntentPromptsPage() {
                         </div>
 
                         {/* Generated UI Section */}
-                        {(editingId || formData.generatedHtml) && (
-                            <div className="border rounded-md overflow-hidden bg-background">
-                                <div className="border-b bg-muted/30 px-4 py-2 flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        <h3 className="text-sm font-medium">Generated UI Template</h3>
-                                        <div className="flex bg-muted rounded-md p-0.5">
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveTab('preview')}
-                                                className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'preview' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
-                                            >
-                                                Preview
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveTab('html')}
-                                                className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'html' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
-                                            >
-                                                HTML
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveTab('css')}
-                                                className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'css' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
-                                            >
-                                                CSS
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveTab('js')}
-                                                className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'js' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
-                                            >
-                                                JS
-                                            </button>
+                        {
+                            (editingId || formData.generatedHtml) && (
+                                <div className="border rounded-md overflow-hidden bg-background">
+                                    <div className="border-b bg-muted/30 px-4 py-2 flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <h3 className="text-sm font-medium">Generated UI Template</h3>
+                                            <div className="flex bg-muted rounded-md p-0.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveTab('preview')}
+                                                    className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'preview' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
+                                                >
+                                                    Preview
+                                                </button>
+                                                {editingId && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveTab('page_preview')}
+                                                        className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all flex items-center gap-1", activeTab === 'page_preview' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
+                                                    >
+                                                        <Maximize2 className="h-3 w-3" />
+                                                        In Page
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveTab('html')}
+                                                    className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'html' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
+                                                >
+                                                    HTML
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveTab('css')}
+                                                    className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'css' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
+                                                >
+                                                    CSS
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setActiveTab('js')}
+                                                    className={cn("px-3 py-1 text-xs font-medium rounded-sm transition-all", activeTab === 'js' ? "bg-background shadow-sm" : "hover:text-foreground/80 text-muted-foreground")}
+                                                >
+                                                    JS
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1">
+                                            {activeTab === 'preview' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowFullPreview(true)}
+                                                    className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-md transition-colors"
+                                                    title="Full Screen Preview"
+                                                >
+                                                    <Maximize2 className="h-4 w-4" />
+                                                </button>
+                                            )}
+                                            {(activeTab !== 'preview') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={
+                                                        activeTab === 'html' ? formatHtml :
+                                                            activeTab === 'css' ? formatCss :
+                                                                formatJs
+                                                    }
+                                                    className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-md transition-colors flex items-center gap-1.5 text-xs font-medium"
+                                                    title="Format Code"
+                                                >
+                                                    <Wand2 className="h-3.5 w-3.5" />
+                                                    Format
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-
-                                    <div className="flex items-center gap-1">
+                                    <div className="h-[300px]">
                                         {activeTab === 'preview' && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowFullPreview(true)}
-                                                className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-md transition-colors"
-                                                title="Full Screen Preview"
-                                            >
-                                                <Maximize2 className="h-4 w-4" />
-                                            </button>
+                                            <iframe
+                                                title="UI Preview"
+                                                srcDoc={getPreviewSrcDoc()}
+                                                className="w-full h-full border-0 bg-white"
+                                                sandbox="allow-scripts"
+                                            />
                                         )}
-                                        {(activeTab !== 'preview') && (
-                                            <button
-                                                type="button"
-                                                onClick={
-                                                    activeTab === 'html' ? formatHtml :
-                                                        activeTab === 'css' ? formatCss :
-                                                            formatJs
-                                                }
-                                                className="p-1.5 text-muted-foreground hover:text-primary hover:bg-muted rounded-md transition-colors flex items-center gap-1.5 text-xs font-medium"
-                                                title="Format Code"
-                                            >
-                                                <Wand2 className="h-3.5 w-3.5" />
-                                                Format
-                                            </button>
+                                        {activeTab === 'page_preview' && (
+                                            <div className="relative w-full h-full">
+                                                {loadingPagePreview ? (
+                                                    <div className="flex items-center justify-center h-full gap-2 text-muted-foreground">
+                                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                                        <span className="text-sm">Loading page preview from Qdrant...</span>
+                                                    </div>
+                                                ) : pagePreviewHtml ? (
+                                                    <iframe
+                                                        title="In-Page Preview"
+                                                        srcDoc={pagePreviewHtml}
+                                                        className="w-full h-full border-0"
+                                                        sandbox="allow-scripts"
+                                                    />
+                                                ) : (
+                                                    <div className="flex flex-col items-center justify-center h-full text-center gap-2">
+                                                        <Maximize2 className="h-8 w-8 text-muted-foreground/50" />
+                                                        <p className="text-sm text-muted-foreground">Click "Preview in Page" to load the crawled site HTML with the component injected</p>
+                                                        {editingId && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handlePagePreview(editingId)}
+                                                                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors"
+                                                            >
+                                                                <Maximize2 className="h-3 w-3" />
+                                                                Load Page Preview
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {activeTab === 'html' && (
+                                            <textarea
+                                                value={formData.generatedHtml}
+                                                onChange={(e) => setFormData({ ...formData, generatedHtml: e.target.value })}
+                                                className="w-full h-full p-4 font-mono text-xs resize-none focus:outline-none bg-slate-950 text-slate-50"
+                                                placeholder="<!-- HTML Content -->"
+                                                spellCheck="false"
+                                            />
+                                        )}
+                                        {activeTab === 'css' && (
+                                            <textarea
+                                                value={formData.generatedCss}
+                                                onChange={(e) => setFormData({ ...formData, generatedCss: e.target.value })}
+                                                className="w-full h-full p-4 font-mono text-xs resize-none focus:outline-none bg-slate-950 text-slate-50"
+                                                placeholder="/* CSS Content */"
+                                                spellCheck="false"
+                                            />
+                                        )}
+                                        {activeTab === 'js' && (
+                                            <textarea
+                                                value={formData.generatedJs}
+                                                onChange={(e) => setFormData({ ...formData, generatedJs: e.target.value })}
+                                                className="w-full h-full p-4 font-mono text-xs resize-none focus:outline-none bg-slate-950 text-slate-50"
+                                                placeholder="// JavaScript Content"
+                                                spellCheck="false"
+                                            />
                                         )}
                                     </div>
                                 </div>
-                                <div className="h-[300px]">
-                                    {activeTab === 'preview' && (
-                                        <iframe
-                                            title="UI Preview"
-                                            srcDoc={getPreviewSrcDoc()}
-                                            className="w-full h-full border-0 bg-white"
-                                            sandbox="allow-scripts"
-                                        />
-                                    )}
-                                    {activeTab === 'html' && (
-                                        <textarea
-                                            value={formData.generatedHtml}
-                                            onChange={(e) => setFormData({ ...formData, generatedHtml: e.target.value })}
-                                            className="w-full h-full p-4 font-mono text-xs resize-none focus:outline-none bg-slate-950 text-slate-50"
-                                            placeholder="<!-- HTML Content -->"
-                                            spellCheck="false"
-                                        />
-                                    )}
-                                    {activeTab === 'css' && (
-                                        <textarea
-                                            value={formData.generatedCss}
-                                            onChange={(e) => setFormData({ ...formData, generatedCss: e.target.value })}
-                                            className="w-full h-full p-4 font-mono text-xs resize-none focus:outline-none bg-slate-950 text-slate-50"
-                                            placeholder="/* CSS Content */"
-                                            spellCheck="false"
-                                        />
-                                    )}
-                                    {activeTab === 'js' && (
-                                        <textarea
-                                            value={formData.generatedJs}
-                                            onChange={(e) => setFormData({ ...formData, generatedJs: e.target.value })}
-                                            className="w-full h-full p-4 font-mono text-xs resize-none focus:outline-none bg-slate-950 text-slate-50"
-                                            placeholder="// JavaScript Content"
-                                            spellCheck="false"
-                                        />
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                            )
+                        }
 
                         <div className="flex justify-end space-x-2 pt-2">
                             <button
@@ -576,9 +688,10 @@ export default function IntentPromptsPage() {
                                 {editingId ? 'Update Prompt' : 'Create Prompt'}
                             </button>
                         </div>
-                    </form>
-                </div>
-            )}
+                    </form >
+                </div >
+            )
+            }
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {data?.getIntentPrompts.map((prompt: IntentPrompt) => (
@@ -617,9 +730,12 @@ export default function IntentPromptsPage() {
                         </div>
 
                         <div className="mt-4 pt-4 border-t flex items-center justify-between text-xs text-muted-foreground">
-                            <span className="flex items-center">
+                            <span className="flex items-center gap-2">
                                 {prompt.isActive ? <Zap className="h-3 w-3 text-yellow-500 mr-1" fill="currentColor" /> : <div className="h-2 w-2 rounded-full bg-slate-300 mr-2" />}
                                 {prompt.isActive ? 'Active' : 'Inactive'}
+                                <span className={cn('px-1.5 py-0.5 rounded text-xs font-medium', prompt.injectionMode === 'inline' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600')}>
+                                    {prompt.injectionMode === 'inline' ? 'Inline' : 'Popup'}
+                                </span>
                             </span>
                             <span>{new Date(prompt.updatedAt).toLocaleDateString()}</span>
                         </div>
@@ -645,6 +761,6 @@ export default function IntentPromptsPage() {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     )
 }

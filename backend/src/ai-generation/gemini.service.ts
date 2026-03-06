@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 
@@ -87,7 +87,8 @@ export class GeminiService {
         siteDesignDescription: string,
         designSystem?: any,
         mutationType: string = 'inject',
-    ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string; javascript_payload: string; highlight_css?: string; tooltip_html?: string; css_modifications?: Record<string, string> }> {
+        intentKey?: string,
+    ): Promise<{ injection_target_selector: string; html_payload: string; scoped_css: string; javascript_payload: string; highlight_css?: string; tooltip_html?: string; css_modifications?: Record<string, string>; injection_position?: string }> {
 
         let designContext = `Site Design/Style: "${siteDesignDescription}"`;
         if (designSystem) {
@@ -101,81 +102,97 @@ export class GeminiService {
             `;
         }
 
+        // Intent-specific UI template hints to steer generation toward appropriate components
+        const intentTemplateHints: Record<string, string> = {
+            'feature_evaluator': 'Generate a feature comparison checklist card or table with tick marks (✓/✗). Show pros and differentiators clearly.',
+            'price_sensitive': 'Generate a ROI calculator card, savings highlight badge, or annual vs monthly pricing callout. Emphasize value and money-back guarantee.',
+            'high_intent': 'Generate a low-friction conversion widget — a compact form or button strip for trial/demo booking. Minimize steps.',
+            'bounce_risk': 'Generate an exit-intent overlay with a compelling offer (discount, free resource, or checklist). Include a countdown or urgency signal.',
+            'hesitation': 'Generate a social proof strip — testimonials, star ratings, or "X customers joined this week" counters.',
+            'confused': 'Generate a step-by-step guide tooltip or onboarding progress bar. Use numbered steps and simple language.',
+            'researcher': 'Generate a resource card with links to case studies, documentation, or comparison guides. Show depth and proof.',
+            'return_visitor': 'Generate a personalized welcome-back banner acknowledging their previous visit and offering to continue where they left off.',
+        };
+        const templateHint = intentKey ? (intentTemplateHints[intentKey] || '') : '';
+
         const prompt = `
-      You are an Elite Frontend Engineer and World-Class UI/UX Designer.
+      You are an Elite Frontend Engineer and World-Class UI/UX Designer with deep expertise in conversion rate optimization.
+      Think step by step before generating JSON to produce the most accurate and contextually appropriate output.
       
       Context:
       User Intent: "${userIntent}"
-      Current Page Section Context (HTML): "${siteContextHtml.substring(0, 1000)}..."
+      Detected Intent Category: "${intentKey || 'general'}"
+      ${templateHint ? `Recommended Component Type: ${templateHint}` : ''}
+      Current Page Section Context (HTML): "${siteContextHtml.substring(0, 3000)}..."
       ${designContext}
 
-      Objective:
+        Objective:
       Generate a STUNNING, HIGH-PERFORMANCE UI component to address the user's intent. 
       This component will be injected into a Shadow DOM host on a client's website.
       It MUST feel NATIVE to the host site by using the provided design tokens exactly.
 
-      SALES STRATEGY RULES (CRITICAL — think like a top salesperson):
-      1. NEVER be pushy or aggressive. Be a helpful consultant, not a carnival barker.
+            SALES STRATEGY RULES (CRITICAL — think like a top salesperson):
+        1. NEVER be pushy or aggressive. Be a helpful consultant, not a carnival barker.
       2. Match the visitor's energy based on their intent:
-         - Researcher → provide depth, data, case studies, comparisons
-         - Price-sensitive → emphasize value, ROI, money-back guarantees, annual savings
-         - Confused → simplify, guide step-by-step, offer help
-         - High-intent → reduce friction, make the CTA crystal clear and obvious
-         - Hesitating → reassure with social proof and low-commitment options
-         - Bounce risk → give them a compelling reason to stay (special offer, free resource)
-      3. Use social proof when contextually appropriate ("Join 2,000+ teams" or "Trusted by...")
-      4. Create gentle urgency ONLY when genuine (limited time offers, spots remaining)
-         - NEVER fabricate scarcity or create a false sense of urgency
-      5. Handle objections preemptively:
-         - If user was on pricing page → address value/cost concerns
-         - If user was comparing alternatives → highlight unique differentiators
-         - If user visited refund/cancel pages → emphasize guarantees and support
-      6. Always provide an escape — NEVER trap the user. Include a clear close button.
+            - Researcher → provide depth, data, case studies, comparisons
+                - Price-sensitive → emphasize value, ROI, money-back guarantees, annual savings
+                    - Confused → simplify, guide step-by-step, offer help
+                        - High-intent → reduce friction, make the CTA crystal clear and obvious
+                            - Hesitating → reassure with social proof and low-commitment options
+                                - Bounce risk → give them a compelling reason to stay (special offer, free resource)
+        3. Use social proof when contextually appropriate ("Join 2,000+ teams" or "Trusted by...")
+        4. Create gentle urgency ONLY when genuine (limited time offers, spots remaining)
+            - NEVER fabricate scarcity or create a false sense of urgency
+        5. Handle objections preemptively:
+        - If user was on pricing page → address value/cost concerns
+            - If user was comparing alternatives → highlight unique differentiators
+                - If user visited refund/cancel pages → emphasize guarantees and support
+        6. Always provide an escape — NEVER trap the user. Include a clear close button.
 
       Design Guidelines (MANDATORY):
-      1. **Aesthetics**: "Native Chameleon Mode" (Highest Priority).
+        1. **Aesthetics**: "Native Chameleon Mode" (Highest Priority).
          - The component MUST look like it was built by the original site developers.
          - IF design tokens are provided, use them STRICTLY.
          - IF NO design tokens are provided, analyze the 'Current Page Section Context' HTML to infer:
-            - Font family (use 'inherit' or the dominant font).
+        - Font family (use 'inherit' or the dominant font).
             - Border radius (match the button/card radius in the snippet).
             - Shadow depth (flat, subtle, or deep - match the context).
          - DO NOT default to "Glassmorphism" or "Modern Gradients" unless the host site uses them.
          - Text Contrast: Ensure AA standard compliance.
       
       2. **Fallback Strategy** (If context is missing/ambiguous):
-         - Use a "Clean, Minimalist SaaS" style.
+- Use a "Clean, Minimalist SaaS" style.
          - Font: system-ui, -apple-system, sans-serif.
          - Background: White (#ffffff) or very light gray (#f9fafb).
          - Colors: Neutral grays for borders/text, Blue (#2563eb) for primary actions if no other color detected.
-         - Shadows: Subtle (box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1)).
+         - Shadows: Subtle (box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)).
          - NO gradients, NO glassmorphism, NO complex animations.
 
       3. **Layout**:
-         - The component is isolated in a Shadow DOM.
+- The component is isolated in a Shadow DOM.
          - Use ':host' for the root container styles.
          - For Modals: Use a backdrop that matches the site's modal style (often semi-transparent black).
-         - For Popups: clear visual hierarchy but matching the site's card design.
+    - For Popups: clear visual hierarchy but matching the site's card design.
 
-      4. **Responsiveness**: Must work perfectly on Mobile and Desktop.
+4. **Responsiveness**: Must work perfectly on Mobile and Desktop.
 
       Technical Constraints (CRITICAL):
-      1. **Shadow DOM Environment**:
-         - DO NOT try to style 'body' or 'html'.
+1. **Shadow DOM Environment**:
+- DO NOT try to style 'body' or 'html'.
          - CSS classes are scoped.
          - Use the extracted font-family in :host or 'font-family: inherit'.
       2. **JavaScript**:
-         - Write standard Vanilla JS.
+- Write standard Vanilla JS.
          - The environment proxies 'document' to the Shadow Root.
          - ALWAYS add a closing mechanism.
       3. **Closing Mechanism**:
-         - You MUST include a close button with class "vi-internal-close".
+- You MUST include a close button with class "vi-internal-close".
          - Ensure the JS handles the click event for this button to remove the host element (or hide it).
 
       Response Format:
       Return ONLY valid JSON (RFC 8259 compliant). No markdown formatting.
-      
-      ${mutationType === 'highlight' ? `
+
+    ${mutationType === 'highlight' ? `
       MUTATION TYPE: HIGHLIGHT
       Instead of a popup, generate CSS to HIGHLIGHT an existing element with a pulsing effect and a contextual tooltip.
       {
@@ -195,8 +212,21 @@ export class GeminiService {
         "javascript_payload": "JS that modifies existing elements: change text content, add trust badges, modify button labels, add inline helper text. Use document.querySelector. ALWAYS add a way to revert (store originals).",
         "css_modifications": { "property": "value" }
       }
+      ` : mutationType === 'inline_inject' ? `
+      MUTATION TYPE: INLINE_INJECT
+      Generate an inline BLOCK element (banner, card, feature comparison row, CTA block) that integrates naturally into the page content flow.
+      It will be inserted adjacently to an existing element using insertAdjacentHTML.
+      DO NOT use position:fixed or position:absolute — it should flow with the document.
+      The component should feel like it was always part of the page, not like an overlay.
+      {
+        "injection_target_selector": "CSS selector of the existing element to insert near (e.g. 'h1', '.pricing-table', '#features'). Choose the most semantically appropriate element from the page HTML provided.",
+        "injection_position": "One of: 'beforebegin' (before element), 'afterbegin' (first child), 'beforeend' (last child), 'afterend' (after element). Choose based on where the component makes most sense contextually.",
+        "html_payload": "The inline block HTML. Use natural width (100% or fit-content), no fixed positioning.",
+        "scoped_css": "CSS for the component. Use ':host' for the shadow root wrapper. Make it blend into the page.",
+        "javascript_payload": "Optional JS. Do NOT include <script> tags."
+      }
       ` : `
-      MUTATION TYPE: INJECT (Standard)
+      MUTATION TYPE: INJECT (Standard Popup/Overlay)
       {
         "injection_target_selector": "The CSS selector on the HOST page where this should appear (e.g., 'body' for floating, '#product-root' for embedded)",
         "html_payload": "The HTML structure. Start with a container div with a unique ID.",
@@ -204,7 +234,8 @@ export class GeminiService {
         "javascript_payload": "The JavaScript logic. Do NOT include <script> tags. Ensure null checks."
       }
       `}
-    `;
+`;
+
 
         try {
             const model = this.getRotatedModel('gemini-2.5-flash');
@@ -225,6 +256,7 @@ export class GeminiService {
                 javascript_payload: parsed.javascript_payload || '',
                 highlight_css: parsed.highlight_css || undefined,
                 css_modifications: parsed.css_modifications || undefined,
+                injection_position: parsed.injection_position || undefined,
             };
         } catch (error) {
             this.logger.error('Error generating UI element', error);
@@ -339,3 +371,4 @@ Return ONLY valid JSON. No markdown formatting.
         }
     }
 }
+

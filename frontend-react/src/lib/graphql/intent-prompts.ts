@@ -12,6 +12,9 @@ export const GET_INTENT_PROMPTS = gql`
       generatedHtml
       generatedCss
       generatedJs
+      generatedTargetSelector
+      generatedInjectionPosition
+      injectionMode
       isActive
       createdAt
       updatedAt
@@ -30,6 +33,9 @@ export const CREATE_INTENT_PROMPT = gql`
       generatedHtml
       generatedCss
       generatedJs
+      generatedTargetSelector
+      generatedInjectionPosition
+      injectionMode
       isActive
     }
   }
@@ -46,6 +52,9 @@ export const UPDATE_INTENT_PROMPT = gql`
       generatedHtml
       generatedCss
       generatedJs
+      generatedTargetSelector
+      generatedInjectionPosition
+      injectionMode
       isActive
     }
   }
@@ -58,11 +67,24 @@ export const DELETE_INTENT_PROMPT = gql`
 `
 
 export const GENERATE_PROMPT_PREVIEW = gql`
-  mutation GeneratePromptPreview($siteId: String!, $intent: String!, $prompt: String!) {
-    generatePromptPreview(siteId: $siteId, intent: $intent, prompt: $prompt) {
+  mutation GeneratePromptPreview($siteId: String!, $intent: IntentCategory!, $prompt: String!, $injectionMode: String, $promptId: String) {
+    generatePromptPreview(siteId: $siteId, intent: $intent, prompt: $prompt, injectionMode: $injectionMode, promptId: $promptId) {
       html
       css
       js
+      targetSelector
+      injectionPosition
+    }
+  }
+`
+
+export const GET_INTENT_PROMPT_PAGE_PREVIEW = gql`
+  query GetIntentPromptPagePreview($siteId: String!, $promptId: String!) {
+    getIntentPromptPagePreview(siteId: $siteId, promptId: $promptId) {
+      pageHtml
+      targetSelector
+      injectionPosition
+      injectionMode
     }
   }
 `
@@ -76,6 +98,9 @@ export interface IntentPrompt {
   generatedHtml?: string
   generatedCss?: string
   generatedJs?: string
+  generatedTargetSelector?: string
+  generatedInjectionPosition?: string
+  injectionMode: 'popup' | 'inline'
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -87,6 +112,7 @@ export interface CreateIntentPromptInput {
   prompt: string
   description?: string
   isActive?: boolean
+  injectionMode?: 'popup' | 'inline'
 }
 
 export interface UpdateIntentPromptInput {
@@ -98,10 +124,20 @@ export interface UpdateIntentPromptInput {
   generatedCss?: string
   generatedJs?: string
   isActive?: boolean
+  injectionMode?: 'popup' | 'inline'
 }
 
 export interface GeneratePromptPreviewResult {
   html: string
   css: string
   js: string
+  targetSelector?: string
+  injectionPosition?: string
+}
+
+export interface IntentPagePreviewResult {
+  pageHtml: string
+  targetSelector?: string
+  injectionPosition?: string
+  injectionMode: string
 }

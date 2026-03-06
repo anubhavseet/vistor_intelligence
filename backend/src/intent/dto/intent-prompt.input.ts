@@ -25,6 +25,11 @@ export class CreateIntentPromptInput {
     @IsOptional()
     @IsBoolean()
     isActive: boolean;
+
+    @Field({ nullable: true, defaultValue: 'popup' })
+    @IsOptional()
+    @IsString()
+    injectionMode?: 'popup' | 'inline';
 }
 
 @InputType()
@@ -67,4 +72,9 @@ export class UpdateIntentPromptInput {
     @IsOptional()
     @IsBoolean()
     isActive?: boolean;
+
+    @Field({ nullable: true })
+    @IsOptional()
+    @IsString()
+    injectionMode?: 'popup' | 'inline';
 }

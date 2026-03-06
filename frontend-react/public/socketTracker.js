@@ -435,11 +435,176 @@
                     referrer: document.referrer
                 });
 
+                // Restore any persisted inline injections from previous sessions
+                // Use 1200ms delay to let the page DOM settle before injecting
+                setTimeout(() => this._restoreInlineInjections(), 1200);
+
             }, CONFIG.startUpDelay);
 
             // Online/Offline
             window.addEventListener('online', () => { this.isOnline = true; this.flushBuffer(); });
             window.addEventListener('offline', () => { this.isOnline = false; });
+        }
+
+        // ---- Inline Injection Persistence (localStorage) ----
+
+        _getPersistedInjectionsKey() {
+            return `vi_persisted_inline_${this.siteId}`;
+        }
+
+        _persistInlineInjection(intent, uniqueId, targetSelector, position, htmlPayload, scopedCss, jsPayload) {
+            try {
+                const key = this._getPersistedInjectionsKey();
+                console.log(`[Tracker] [Persist] Writing inline injection to localStorage. Key: ${key}, intent: ${intent}, uniqueId: ${uniqueId}`);
+
+                const raw = localStorage.getItem(key);
+                let entries = [];
+                if (raw) {
+                    try { entries = JSON.parse(raw); } catch (_) { entries = []; }
+                }
+
+                const currentFingerprint = `inline_inject|${targetSelector}|${position}|${(htmlPayload || '').substring(0, 150)}`;
+
+                // Remove any prior entry for same uniqueId OR same fingerprint (dedup) and expired entries
+                const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+                entries = entries.filter(e => {
+                    const age = Date.now() - e.timestamp;
+                    if (age >= TTL_MS) return false;
+                    if (e.uniqueId === uniqueId) return false;
+                    const fingerprint = `inline_inject|${e.targetSelector}|${e.position}|${(e.htmlPayload || '').substring(0, 150)}`;
+                    if (fingerprint === currentFingerprint) return false;
+                    return true;
+                });
+
+                entries.push({
+                    intent,
+                    uniqueId,
+                    targetSelector,
+                    position,
+                    htmlPayload,
+                    scopedCss,
+                    jsPayload: jsPayload || '',
+                    timestamp: Date.now(),
+                    path: window.location.pathname,
+                });
+
+                localStorage.setItem(key, JSON.stringify(entries));
+                console.log(`[Tracker] [Persist] ✅ Successfully persisted inline injection. localStorage key: "${key}", total entries: ${entries.length}`);
+            } catch (e) {
+                console.error('[Tracker] [Persist] ❌ FAILED to persist inline injection. localStorage may be blocked or full.', e);
+            }
+        }
+
+        _clearPersistedInjection(uniqueId) {
+            try {
+                const key = this._getPersistedInjectionsKey();
+                const raw = localStorage.getItem(key);
+                if (!raw) return;
+                let entries = JSON.parse(raw);
+                entries = entries.filter(e => e.uniqueId !== uniqueId);
+                localStorage.setItem(key, JSON.stringify(entries));
+                console.log(`[Tracker] Cleared persisted injection for uniqueId: ${uniqueId}`);
+            } catch (e) { }
+        }
+
+        _restoreInlineInjections() {
+            try {
+                const key = this._getPersistedInjectionsKey();
+                console.log(`[Tracker] [Restore] Checking localStorage for persisted injections. Key: "${key}"`);
+
+                const raw = localStorage.getItem(key);
+                if (!raw) {
+                    console.log('[Tracker] [Restore] No persisted injections found in localStorage.');
+                    return;
+                }
+
+                const TTL_MS = 24 * 60 * 60 * 1000;
+                let allEntries;
+                try {
+                    allEntries = JSON.parse(raw);
+                } catch (_) {
+                    console.warn('[Tracker] [Restore] Failed to parse localStorage entry, clearing corrupted data.');
+                    localStorage.removeItem(key);
+                    return;
+                }
+
+                console.log(`[Tracker] [Restore] Found ${allEntries.length} total entries in storage.`);
+
+                // Normalize current path — strip trailing slash for comparison
+                const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+
+                // Restore entries within TTL whose stored path matches current path
+                // (normalized: ignore trailing slashes, allow sub-path prefix match)
+                const validEntries = allEntries.filter(e => {
+                    const age = Date.now() - e.timestamp;
+                    if (age >= TTL_MS) {
+                        console.log(`[Tracker] [Restore] Skipping entry (EXPIRED, ${Math.round(age / 3600000)}h old): intent=${e.intent}`);
+                        return false;
+                    }
+                    if (!e.path) return true; // legacy entry with no path → restore on any page
+                    const storedPath = e.path.replace(/\/$/, '') || '/';
+                    const pathMatch = storedPath === currentPath || currentPath.startsWith(storedPath + '/');
+                    if (!pathMatch) {
+                        console.log(`[Tracker] [Restore] Skipping entry (PATH MISMATCH, stored: "${storedPath}", current: "${currentPath}"): intent=${e.intent}`);
+                    } else {
+                        console.log(`[Tracker] [Restore] ✅ Entry eligible for restore: intent=${e.intent}, uniqueId=${e.uniqueId}`);
+                    }
+                    return pathMatch;
+                });
+
+                if (validEntries.length === 0) {
+                    console.log('[Tracker] [Restore] No entries match current path/TTL. Nothing to restore.');
+                    // Clean up expired entries from storage
+                    const fresh = allEntries.filter(e => (Date.now() - e.timestamp) < TTL_MS);
+                    if (fresh.length < allEntries.length) localStorage.setItem(key, JSON.stringify(fresh));
+                    return;
+                }
+
+                console.log(`[Tracker] [Restore] Restoring ${validEntries.length} inline injection(s) from localStorage`);
+
+                validEntries.forEach((entry, i) => {
+                    // Stagger restores to avoid race conditions with page paint
+                    setTimeout(() => {
+                        // Content fingerprint check: prevent identical content restore
+                        const fingerprint = `inline_inject|${entry.targetSelector}|${entry.position}|${(entry.htmlPayload || '').substring(0, 150)}`;
+                        for (const [id, activeEntry] of this.activeInjections.entries()) {
+                            const existingFingerprint = (activeEntry instanceof HTMLElement) ? activeEntry.getAttribute('data-vi-fingerprint') : activeEntry.fingerprint;
+                            if (existingFingerprint === fingerprint) {
+                                console.log(`[Tracker] [Restore] Skipping restore for ${entry.uniqueId} — identical content already in DOM.`);
+                                return;
+                            }
+                        }
+
+                        // Bug fix: check BOTH the original ID and the restore-suffixed ID
+                        // to prevent duplicate injection when server also pushes the same payload
+                        if (document.getElementById(`vi-ai-${entry.uniqueId}`) ||
+                            document.getElementById(`vi-ai-${entry.uniqueId}_r`) ||
+                            document.querySelector(`[data-vi-original-id="${entry.uniqueId}"]`)) {
+                            console.log(`[Tracker] [Restore] Skipping restore for ${entry.uniqueId} — already in DOM.`);
+                            return;
+                        }
+
+                        console.log(`[Tracker] [Restore] Injecting restored entry: intent=${entry.intent}, selector=${entry.targetSelector}`);
+                        this._handleInlineInject(
+                            entry.uniqueId + '_r', // suffix _r marks it as a restore
+                            entry.targetSelector,
+                            entry.position,
+                            entry.htmlPayload,
+                            entry.scopedCss,
+                            entry.jsPayload,
+                            5, // default priority for restored
+                            entry.intent, // pass intent for clear-on-dismiss
+                            entry.uniqueId // pass original ID for guard attribute
+                        );
+                    }, i * 200);
+                });
+
+                // Clean up expired entries from storage
+                const fresh = allEntries.filter(e => (Date.now() - e.timestamp) < TTL_MS);
+                localStorage.setItem(key, JSON.stringify(fresh));
+            } catch (e) {
+                console.warn('[Tracker] Could not restore inline injections', e);
+            }
         }
 
         // --- Subscriptions ---
@@ -795,6 +960,7 @@
 
             const {
                 injection_target_selector,
+                injection_position,
                 html_payload,
                 scoped_css,
                 javascript_payload,
@@ -807,8 +973,34 @@
                 css_modifications,
             } = payload;
 
+            // Ensure intent is captured regardless of field name casing or position
+            const intentType = intent || payload.intent || 'general';
+            const uniqueId = injectionId || `vi_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+            // Content-based fingerprint for dedup (mutation type, selector, position, content snippet)
+            const fingerprint = `${mutationType}|${injection_target_selector}|${injection_position || ''}|${(html_payload || '').substring(0, 150)}`;
+
+            // Bug fix (Race condition): Debounce guard — prevent the same injection from
+            // being applied twice when both the restore (_r) and a live server push arrive
+            // concurrently on page load. If the injection (or its restore counterpart) is
+            // already in the DOM, skip silently.
+            if (document.getElementById(`vi-ai-${uniqueId}`) ||
+                document.getElementById(`vi-ai-${uniqueId}_r`) ||
+                document.querySelector(`[data-vi-original-id="${uniqueId}"]`)) {
+                console.log(`[Tracker] Injection ${uniqueId} already in DOM, skipping duplicate`);
+                return;
+            }
+
+            // Fingerprint check: avoid identical content even with different IDs
+            for (const [id, entry] of this.activeInjections.entries()) {
+                const existingFingerprint = (entry instanceof HTMLElement) ? entry.getAttribute('data-vi-fingerprint') : entry.fingerprint;
+                if (existingFingerprint === fingerprint) {
+                    console.log(`[Tracker] Injection content duplicate found for fingerprint: ${fingerprint}, skipping...`);
+                    return;
+                }
+            }
+
             // Check injection limits per intent
-            const intentType = intent || 'general';
             const currentCount = this.injectionCounts[intentType] || 0;
             let maxLimit = CONFIG.maxInjectionsPerIntent[intentType];
             if (typeof maxLimit === 'undefined') {
@@ -825,7 +1017,6 @@
                 return;
             }
 
-            const uniqueId = injectionId || `vi_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
             this.lastInjectionId = uniqueId;
 
             // Route to the appropriate mutation handler
@@ -841,6 +1032,9 @@
                     break;
                 case 'concierge':
                     this._handleConcierge(uniqueId, html_payload, priority);
+                    break;
+                case 'inline_inject':
+                    this._handleInlineInject(uniqueId, injection_target_selector, injection_position, html_payload, scoped_css, javascript_payload, priority, intentType);
                     break;
                 case 'inject':
                 default:
@@ -860,6 +1054,7 @@
             const host = document.createElement('div');
             host.id = `vi-ai-${uniqueId}`;
             host.setAttribute('data-vi-injection', uniqueId);
+            host.setAttribute('data-vi-fingerprint', `inject|${targetSelector}||${(htmlPayload || '').substring(0, 150)}`);
             host.style.cssText = `position: relative; z-index: ${2147483600 + priority};`;
 
             const shadow = host.attachShadow({ mode: 'open' });
@@ -901,6 +1096,88 @@
             this.activeInjections.set(uniqueId, host);
         }
 
+        // --- Mutation Type: INLINE_INJECT (Block flow Shadow DOM adjacent to existing element) ---
+        // originalId: when called from _restoreInlineInjections, the original uniqueId of the
+        //   persisted injection (before the '_r' suffix). Used to set data-vi-original-id so
+        //   the live server-push de-dup guard can detect an already-restored injection.
+        _handleInlineInject(uniqueId, targetSelector, injectionPosition, htmlPayload, scopedCss, jsPayload, priority, intent, originalId) {
+            const positions = ['beforebegin', 'afterbegin', 'beforeend', 'afterend'];
+            const position = positions.includes(injectionPosition) ? injectionPosition : 'afterend';
+
+            const targetElement = document.querySelector(targetSelector);
+            if (!targetElement) {
+                console.warn(`[Tracker] Inline inject: target not found: ${targetSelector}.`);
+                const isRestore = uniqueId.endsWith('_r');
+                if (!isRestore) {
+                    console.warn(`[Tracker] Falling back to body.`);
+                    // Fallback to standard inject at body
+                    this._handleInject(uniqueId, 'body', htmlPayload, scopedCss, jsPayload, priority);
+                }
+                return;
+            }
+
+            const host = document.createElement('div');
+            host.id = `vi-ai-${uniqueId}`;
+            host.setAttribute('data-vi-injection', uniqueId);
+            host.setAttribute('data-vi-inline', 'true');
+            host.setAttribute('data-vi-fingerprint', `inline_inject|${targetSelector}|${position}|${(htmlPayload || '').substring(0, 150)}`);
+            // Bug fix: store the original (pre-restore) ID so the live-push guard can find it
+            if (originalId) {
+                host.setAttribute('data-vi-original-id', originalId);
+            }
+            // Inline flow — no fixed positioning
+            host.style.cssText = `position: relative; display: block; width: 100%; z-index: ${2147483600 + priority};`;
+
+            const shadow = host.attachShadow({ mode: 'open' });
+            shadow.innerHTML = `
+                <style>
+                    ${scopedCss}
+                    :host { all: initial; display: block; font-family: inherit; width: 100%; }
+                    * { box-sizing: border-box; }
+                    .vi-internal-close {
+                        position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+                        background: rgba(0,0,0,0.2); color: #333; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center;
+                        cursor: pointer; font-size: 14px; line-height: 1; border: none;
+                        transition: background 0.2s; z-index: 10;
+                    }
+                    .vi-internal-close:hover { background: rgba(0,0,0,0.4); color: #fff; }
+                </style>
+                <div style="position: relative; width: 100%;">
+                    <button class="vi-internal-close" title="Dismiss">&times;</button>
+                    ${htmlPayload}
+                </div>
+            `;
+
+            if (jsPayload) {
+                this._executeInShadow(host, shadow, jsPayload, uniqueId);
+            }
+
+            // insertAdjacentElement respects document flow
+            targetElement.insertAdjacentElement(position, host);
+
+            this._attachInteractionTracking(shadow, host, uniqueId);
+            this.activeInjections.set(uniqueId, host);
+
+            // Persist for page refresh survival — only for new injections (not restores)
+            const persistIntent = intent || 'general';
+            if (!uniqueId.endsWith('_r')) {
+                console.log(`[Tracker] [InlineInject] Persisting injection to localStorage: intent=${persistIntent}, uniqueId=${uniqueId}, path=${window.location.pathname}`);
+                this._persistInlineInjection(persistIntent, uniqueId, targetSelector, position, htmlPayload, scopedCss, jsPayload);
+            } else {
+                console.log(`[Tracker] [InlineInject] RESTORED injection active: id=${uniqueId}`);
+            }
+
+            // Wire close button to clear from localStorage so dismiss = never replay
+            const closeBtn = shadow.querySelector('.vi-internal-close');
+            if (closeBtn) {
+                const baseId = originalId || uniqueId;
+                closeBtn.addEventListener('click', () => {
+                    this._clearPersistedInjection(baseId);
+                }, { once: true });
+            }
+        }
+
         // --- Mutation Type: HIGHLIGHT (CSS highlight + tooltip) ---
         _handleHighlight(uniqueId, targetSelector, tooltipHtml, tooltipCss, jsPayload, highlightCss, priority) {
             const target = document.querySelector(targetSelector);
@@ -930,6 +1207,7 @@
                 const tooltipHost = document.createElement('div');
                 tooltipHost.id = `vi-ai-${uniqueId}`;
                 tooltipHost.setAttribute('data-vi-injection', uniqueId);
+                tooltipHost.setAttribute('data-vi-fingerprint', `highlight|${targetSelector}||${(tooltipHtml || '').substring(0, 150)}`);
                 tooltipHost.style.cssText = `position: absolute; z-index: ${2147483600 + priority};`;
 
                 const shadow = tooltipHost.attachShadow({ mode: 'open' });
@@ -999,7 +1277,8 @@
                 try { new Function('target', jsPayload)(target); } catch (e) { console.error('[Tracker] Modify JS Error', e); }
             }
 
-            this.activeInjections.set(uniqueId, { element: target, originalStyles, originalHtml });
+            const fingerprint = `modify|${targetSelector}||${(jsPayload || JSON.stringify(cssModifications) || '').substring(0, 150)}`;
+            this.activeInjections.set(uniqueId, { element: target, originalStyles, originalHtml, fingerprint });
             this.trackEvent('injection_interaction', { injection_id: uniqueId, action: 'modify_applied' });
         }
 
@@ -1026,7 +1305,8 @@
                 try { new Function('target', jsPayload)(target); } catch (e) { console.error('[Tracker] Replace JS Error', e); }
             }
 
-            this.activeInjections.set(uniqueId, { element: target, originalHtml, originalStyles });
+            const fingerprint = `replace|${targetSelector}||${(htmlPayload || '').substring(0, 150)}`;
+            this.activeInjections.set(uniqueId, { element: target, originalHtml, originalStyles, fingerprint });
             this.trackEvent('injection_interaction', { injection_id: uniqueId, action: 'replace_applied' });
         }
 
@@ -1119,7 +1399,7 @@
             this.activeInjections.delete(injectionId);
             console.log(`[Tracker] Injection ${injectionId} undone`);
         }
-    
+
 
         // --- Mutation Type: CONCIERGE (AI Chat Widget) ---
         _handleConcierge(uniqueId, greeting, priority) {
@@ -1295,7 +1575,7 @@
                     if (response.suggestedActions) {
                         let actions = response.suggestedActions;
                         if (typeof actions === 'string') {
-                            try { actions = JSON.parse(actions); } catch(e) { actions = []; }
+                            try { actions = JSON.parse(actions); } catch (e) { actions = []; }
                         }
                         if (actions.length > 0) {
                             this._addChatActions(messagesEl, actions, inputEl);
