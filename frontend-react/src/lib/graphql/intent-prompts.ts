@@ -89,6 +89,28 @@ export const GET_INTENT_PROMPT_PAGE_PREVIEW = gql`
   }
 `
 
+export const REBUILD_INTENT_SELECTOR_MAP = gql`
+  mutation RebuildIntentSelectorMap($siteId: String!) {
+    rebuildIntentSelectorMap(siteId: $siteId)
+  }
+`
+
+export const GET_INTENT_SELECTORS = gql`
+  query GetIntentSelectors($siteId: String!) {
+    getIntentSelectors(siteId: $siteId) {
+      category
+      selectors
+      confidence
+    }
+  }
+`
+
+export interface IntentSelectorEntry {
+  category: string
+  selectors: string[]
+  confidence: number
+}
+
 export interface IntentPrompt {
   id: string
   siteId: string

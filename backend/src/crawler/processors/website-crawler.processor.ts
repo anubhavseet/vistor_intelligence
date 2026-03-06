@@ -1,5 +1,5 @@
 import { Processor, Process, OnQueueActive, OnQueueCompleted, OnQueueFailed } from '@nestjs/bull';
-import { Logger, Inject } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job } from 'bull';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -8,6 +8,7 @@ import { PubSub } from 'graphql-subscriptions';
 import { CrawlJob, CrawlJobDocument, CrawlJobStatus } from '../../common/schemas/crawl-job.schema';
 import { QdrantService } from '../../qdrant/qdrant.service';
 import { GeminiService } from '../../ai-generation/gemini.service';
+import { IntentService } from '../../intent/intent.service';
 import { v4 as uuidv4 } from 'uuid';
 import { Site, SiteDocument } from '../../common/schemas/site.schema';
 
@@ -34,6 +35,7 @@ export class WebsiteCrawlerProcessor {
         @InjectModel(Site.name) private siteModel: Model<SiteDocument>,
         private qdrantService: QdrantService,
         private geminiService: GeminiService,
+        private intentService: IntentService,
         @Inject('PUB_SUB') private pubSub: PubSub,
     ) { }
 
@@ -315,6 +317,12 @@ export class WebsiteCrawlerProcessor {
             this.logger.log(
                 `Crawl completed for ${startUrl}. Pages crawled: ${pagesCrawled}, Failed: ${pagesFailed}`
             );
+
+            // Trigger Intent Selector Map build in background (non-blocking)
+            // This classifies crawled HTML chunks → semantic categories + CSS selectors
+            this.intentService.buildIntentSelectorMap(siteId).catch(err => {
+                this.logger.error(`[IntentSelectorMap] Failed to build after crawl: ${err.message}`);
+            });
 
             return {
                 success: true,

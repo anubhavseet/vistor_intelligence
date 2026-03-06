@@ -97,6 +97,41 @@ export class IntentPromptsService {
         return this.intentPromptModel.findOne({ siteId, intent, isActive: true }).exec();
     }
 
+    /**
+     * Returns all active intent prompts for a site in the public payload format
+     * used by the tracker SDK for client-side prefetching.
+     * Only prompts with generated HTML are returned.
+     */
+    async getAllActivePayloads(siteId: string): Promise<Array<{
+        intent: string;
+        type: string;
+        html: string;
+        css: string;
+        js: string;
+        targetSelector: string;
+        injectionPosition: string;
+        injectionMode: string;
+    }>> {
+        const prompts = await this.intentPromptModel
+            .find({ siteId, isActive: true, generatedHtml: { $exists: true, $ne: '' } })
+            .exec();
+
+        return prompts.map(p => {
+            const mode = (p as any).injectionMode || 'popup';
+            const type = mode === 'inline' ? 'inline_inject' : 'inject';
+            return {
+                intent: p.intent,
+                type,
+                html: (p as any).generatedHtml || '',
+                css: (p as any).generatedCss || '',
+                js: (p as any).generatedJs || '',
+                targetSelector: (p as any).generatedTargetSelector || 'body',
+                injectionPosition: (p as any).generatedInjectionPosition || 'afterend',
+                injectionMode: mode,
+            };
+        });
+    }
+
     async generatePreview(
         siteId: string,
         intent: IntentCategory,

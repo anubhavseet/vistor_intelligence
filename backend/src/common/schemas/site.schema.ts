@@ -83,6 +83,12 @@ export class Site {
     buttonTextColor?: string;
     logoUrl?: string;
   };
+  @Prop({ type: Object, default: {} })
+  intentSelectorMap?: Record<string, { selectors: string[]; confidence: number }>;
+
+  @Prop({ type: Date })
+  intentSelectorMapBuiltAt?: Date;
+
   save: any;
 }
 

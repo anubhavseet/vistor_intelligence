@@ -95,13 +95,18 @@ export class WebSocketTrackingResolver {
 
             // Update intent score if applicable
             let intentScore = session?.intentScore || 0;
-            const previousScore = session?.intentScore || 0; // Capture before update
+            const previousScore = session?.intentScore || 0;
             let uiPayload = null;
 
             if (this.shouldUpdateIntent(eventType)) {
                 const intentResult = await this.updateIntentScore(sessionId, eventType, data);
                 intentScore = intentResult.score;
-                uiPayload = intentResult.uiPayload;
+
+                // Only propagate server-side UI payload for concierge chat
+                // (all other injections are handled client-side from prefetched payloads)
+                if (intentResult.uiPayload && intentResult.uiPayload.type === 'concierge') {
+                    uiPayload = intentResult.uiPayload;
+                }
 
                 // Phase 2: Accumulate interest profile on every signals_batch
                 if (eventType === 'signals_batch' && data) {
@@ -123,7 +128,7 @@ export class WebSocketTrackingResolver {
                     },
                 });
 
-                // If UI payload generated, publish it and record in session
+                // If server-side UI payload generated (concierge only), publish it
                 if (uiPayload) {
                     const payloadString = typeof uiPayload === 'string' ? uiPayload : JSON.stringify(uiPayload);
                     await this.pubSub.publish(`uiInjection:${sessionId}`, {
@@ -146,8 +151,7 @@ export class WebSocketTrackingResolver {
                     }
                 }
 
-                // Bug #13 fix: Auto-trigger VIP alert when score crosses 70 threshold.
-                // Uses vipAlertSent flag to prevent duplicate alerts per session.
+                // Auto-trigger VIP alert when score crosses 70 threshold
                 const freshSession = await this.sessionManager.getSession(sessionId);
                 if (
                     intentResult.score >= 70 &&

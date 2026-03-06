@@ -52,6 +52,21 @@ export class GeminiService {
         }
     }
 
+    /**
+     * Plain-text generation — used for classification tasks like building the Intent Selector Map.
+     */
+    async generateText(prompt: string): Promise<string> {
+        try {
+            const model = this.getRotatedModel('gemini-2.5-flash');
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            return response.text().trim();
+        } catch (error) {
+            this.logger.error('Error in generateText', error);
+            throw error;
+        }
+    }
+
     async generateUiDescription(htmlSnippet: string): Promise<string> {
         const prompt = `
       Analyze the following HTML/CSS snippet as an expert UI Designer.

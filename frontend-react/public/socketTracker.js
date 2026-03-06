@@ -201,10 +201,19 @@
             this.accumulatedDwell = {};
             this.formTimers = {};
             this.injectionCounts = {};
-            this.activeInjections = new Map(); // Multi-injection support: Map<injectionId, hostElement>
+            this.activeInjections = new Map(); // Map<injectionId, hostElement>
             this.lastInjectionId = null;
-            this.injectionHistory = []; // Local tracking of injection interactions
+            this.injectionHistory = [];
             this.MAX_SIMULTANEOUS_INJECTIONS = 3;
+
+            // Client-side intelligence state
+            // Restore accumulated score from sessionStorage so it survives page navigations
+            // within the same tab (sessionStorage is tab-scoped and clears when tab closes).
+            const _storedScore = parseFloat(sessionStorage.getItem('vi_intent_score_' + this.siteId) || '40');
+            this._currentIntentScore = isNaN(_storedScore) ? 40 : Math.min(Math.max(_storedScore, 0), 100);
+            this.intentPayloads = null;      // Prefetched UI payloads: { intent: payload }
+            this.intentSelectorMap = null;   // Crawl-derived semantic element map
+            this._lastInjectedIntent = null; // Prevents repeat injection of same intent
 
             // Initialize
             this.bootstrap();
@@ -322,6 +331,12 @@
                             } catch (e) { }
                         }
 
+                        // Prefetch UI payloads + intent selectors in parallel (non-blocking)
+                        await Promise.all([
+                            this._prefetchIntentPayloads(),
+                            this._prefetchIntentSelectors(),
+                        ]);
+
                         this.startTracking();
 
                     } catch (e) {
@@ -404,6 +419,99 @@
                 console.log('[Tracker] Session bootstrapped via HTTP');
             } catch (e) {
                 console.warn('[Tracker] Session bootstrap failed (will fallback to WS)', e);
+            }
+        }
+
+        // ---- Client-Side Prefetch: UI Payloads + Intent Selectors ----
+
+        /**
+         * Fetches all pre-generated intent UI payloads into browser memory.
+         * After this, when an intent is detected locally, the payload is injected
+         * instantly without any WS round-trip.
+         */
+        async _prefetchIntentPayloads() {
+            try {
+                const query = `
+                    query GetIntentPayloads($siteId: String!) {
+                        getIntentPayloads(siteId: $siteId) {
+                            intent
+                            type
+                            html
+                            css
+                            js
+                            targetSelector
+                            injectionPosition
+                            injectionMode
+                        }
+                    }
+                `;
+                let httpUrl = this.apiUrl;
+                if (!httpUrl.endsWith('/graphql')) httpUrl = httpUrl.endsWith('/') ? httpUrl + 'graphql' : httpUrl + '/graphql';
+
+                const response = await fetch(httpUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, variables: { siteId: this.siteId } })
+                });
+                const result = await response.json();
+                const payloads = result.data?.getIntentPayloads;
+
+                if (payloads && payloads.length > 0) {
+                    this.intentPayloads = {};
+                    payloads.forEach(p => {
+                        this.intentPayloads[p.intent] = p;
+                    });
+                    console.log(`[Tracker] ✅ Prefetched ${payloads.length} intent UI payloads:`, Object.keys(this.intentPayloads));
+                } else {
+                    console.log('[Tracker] No intent payloads configured for this site.');
+                    this.intentPayloads = {};
+                }
+            } catch (e) {
+                console.warn('[Tracker] Failed to prefetch intent payloads', e);
+                this.intentPayloads = {};
+            }
+        }
+
+        /**
+         * Fetches the crawl-derived Intent Selector Map into browser memory.
+         * This map tells the tracker which DOM selectors correspond to which
+         * semantic content categories (pricing, features, cta, etc.) on THIS site.
+         */
+        async _prefetchIntentSelectors() {
+            try {
+                const query = `
+                    query GetIntentSelectors($siteId: String!) {
+                        getIntentSelectors(siteId: $siteId) {
+                            category
+                            selectors
+                            confidence
+                        }
+                    }
+                `;
+                let httpUrl = this.apiUrl;
+                if (!httpUrl.endsWith('/graphql')) httpUrl = httpUrl.endsWith('/') ? httpUrl + 'graphql' : httpUrl + '/graphql';
+
+                const response = await fetch(httpUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, variables: { siteId: this.siteId } })
+                });
+                const result = await response.json();
+                const entries = result.data?.getIntentSelectors;
+
+                if (entries && entries.length > 0) {
+                    this.intentSelectorMap = {};
+                    entries.forEach(e => {
+                        this.intentSelectorMap[e.category] = e.selectors;
+                    });
+                    console.log('[Tracker] ✅ Prefetched intent selector map:', Object.keys(this.intentSelectorMap));
+                } else {
+                    console.log('[Tracker] No intent selector map available (crawl may not have run yet).');
+                    this.intentSelectorMap = {}; // Initialize as empty object instead of null
+                }
+            } catch (e) {
+                console.warn('[Tracker] Failed to prefetch intent selectors', e);
+                this.intentSelectorMap = {}; // Initialize as empty object instead of null
             }
         }
 
@@ -732,7 +840,7 @@
             // 2. Refresh URL
             this.signals.url = window.location.href;
 
-            // 3. check if any data to send
+            // 3. Check if any data to send
             const hasData = Object.keys(this.signals.dwell_time).length > 0 ||
                 this.signals.scroll_velocity > 0 ||
                 this.signals.events.length > 0 ||
@@ -741,15 +849,171 @@
 
             if (!hasData) return;
 
-            // 4. Send Batch
+            // 4. LOCAL SCORING + LOCAL UI INJECTION
             const batchData = JSON.parse(JSON.stringify(this.signals));
+            const localScore = this._scoreSignalsLocally(batchData);
+            const detectedIntent = this._detectIntent(batchData, localScore);
 
-            this.trackEvent('signals_batch', batchData);
+            console.log(`[Tracker] Local score: ${localScore}, detected intent: ${detectedIntent || 'none'}`);
 
-            // 5. Full Reset — clear all accumulated signals to avoid stale data
+            // Inject from prefetched payloads if intent detected
+            if (detectedIntent) {
+                this._maybeInjectLocal(detectedIntent);
+            }
+
+            // 5. Send Batch to backend (fire-and-forget for persistence/analytics)
+            // Include local-computed score and intent for the backend to persist
+            this.trackEvent('signals_batch', { ...batchData, localScore, detectedIntent });
+
+            // 6. Full Reset
             this.signals = this.resetSignals();
             this.accumulatedDwell = {};
         }
+
+        // ─── Client-Side Scoring Engine ─────────────────────────────────────────
+
+        /**
+         * Scores the current signal batch against the in-memory cumulative score.
+         * Uses semantic element categories from the intent selector map when available,
+         * falling back to element ID string matching for uncrawled sites.
+         */
+        _scoreSignalsLocally(signals) {
+            let score = this._currentIntentScore || 40;
+
+            // 1. Dwell Time (semantic category scoring)
+            if (signals.dwell_time) {
+                for (const [elementId, duration] of Object.entries(signals.dwell_time)) {
+                    const el = document.getElementById(elementId);
+                    const category = (el && el.getAttribute('data-vi-intent-category')) || this._guessCategory(elementId);
+
+                    if (category === 'pricing') score += 15;
+                    else if (category === 'features') score += 5;
+                    else if (category === 'testimonial') score += 10;
+                    else if (category === 'docs') score += 5;
+                    else if (category === 'cta') score += 8;
+                    else if (category === 'faq') score += 4;
+                    else if (category === 'hero') score += 3;
+                }
+            }
+
+            // 2. Behavioral signals
+            if (signals.scroll_velocity > 2000) score -= 10; // Fast scroll = scanning
+            if (signals.copy_text && signals.copy_text.length > 0) score += 15;
+            if (signals.text_selections && signals.text_selections.length > 0) score += 10;
+            if (signals.hesitation_event) score += 10;
+
+            if (signals.scroll_depth) {
+                if (signals.scroll_depth > 75) score += 10;
+                else if (signals.scroll_depth > 50) score += 5;
+            }
+
+            if (signals.rage_clicks > 0 || (signals.dead_clicks && signals.dead_clicks.length > 0)) {
+                score += 5;
+            }
+
+            score = Math.min(Math.max(score, 0), 100);
+            this._currentIntentScore = score; // Persist across batches in memory
+            // Persist to sessionStorage so score survives navigations within same tab
+            try { sessionStorage.setItem('vi_intent_score_' + this.siteId, String(score)); } catch (_) { }
+            return score;
+        }
+
+        /**
+         * Determines the semantic category of a DOM element by its ID string.
+         * This is the fallback path for sites that haven't been crawled yet.
+         */
+        _guessCategory(elementId) {
+            const id = (elementId || '').toLowerCase();
+            if (id.includes('pric') || id.includes('plan') || id.includes('billing')) return 'pricing';
+            if (id.includes('feature') || id.includes('benefit') || id.includes('product')) return 'features';
+            if (id.includes('testimonial') || id.includes('review') || id.includes('social-proof')) return 'testimonial';
+            if (id.includes('doc') || id.includes('tech') || id.includes('api')) return 'docs';
+            if (id.includes('cta') || id.includes('hero') || id.includes('header')) return 'cta';
+            if (id.includes('faq') || id.includes('question')) return 'faq';
+            return 'other';
+        }
+
+        /**
+         * Checks if the visitor has dwelled >= minSeconds on any element
+         * belonging to the given semantic category.
+         */
+        _hasCategoryDwell(dwell_time, category, minSeconds) {
+            if (!dwell_time) return false;
+            for (const [elementId, duration] of Object.entries(dwell_time)) {
+                const el = document.getElementById(elementId);
+                const cat = (el && el.getAttribute('data-vi-intent-category')) || this._guessCategory(elementId);
+                if (cat === category && duration >= minSeconds) return true;
+            }
+            return false;
+        }
+
+        /**
+         * Detects the primary intent from the current signal batch + score.
+         * Returns an intent key matching an IntentCategory value, or null.
+         */
+        _detectIntent(signals, score) {
+            const exitIntent = signals.events && signals.events.find(e => e.type === 'exit_intent');
+            const hasPricingDwell = this._hasCategoryDwell(signals.dwell_time, 'pricing', 10);
+            const hasFeatureDwell = this._hasCategoryDwell(signals.dwell_time, 'features', 15);
+            const hasFeatureSelections = signals.text_selections && signals.text_selections.length > 0 && hasFeatureDwell;
+            const isHesitating = signals.hesitation_event;
+            const isConfused = (signals.rage_clicks > 2 || (signals.dead_clicks && signals.dead_clicks.length > 3))
+                && (!signals.scroll_depth || signals.scroll_depth < 30);
+
+            if (exitIntent) return 'bounce_risk';
+            if (isHesitating) return 'hesitation';
+            if (isConfused) return 'confused';
+            if (hasPricingDwell) return 'price_sensitive';
+            if (hasFeatureSelections) return 'feature_evaluator';
+            if (score >= 70) return 'high_intent';
+            if (score >= 30) return 'researcher';
+            return null;
+        }
+
+        /**
+         * Attempts to inject the prefetched UI payload for a detected intent.
+         * Respects all existing cooldown, dedup, and limit guard rails.
+         */
+        _maybeInjectLocal(intentKey) {
+            if (!this.intentPayloads || !this.intentPayloads[intentKey]) return;
+
+            // Cooldown: minimum 60s between injections
+            const lastInjection = this.injectionHistory[this.injectionHistory.length - 1];
+            const timeSinceLastInjection = lastInjection ? Date.now() - lastInjection.timestamp : Infinity;
+            const COOLDOWN_MS = 60000;
+            if (timeSinceLastInjection < COOLDOWN_MS) return;
+
+            // Dismissal guard: skip if user dismissed 2+ in last 5 minutes
+            const recentDismissals = this.injectionHistory.filter(
+                h => h.dismissed && Date.now() - h.timestamp < 300000
+            ).length;
+            if (recentDismissals >= 2) return;
+
+            // Deduplicate: don't re-inject the same intent in one session
+            if (this._lastInjectedIntent === intentKey) return;
+
+            const payload = this.intentPayloads[intentKey];
+            const uniqueId = `vi_local_${intentKey}_${Date.now()}`;
+
+            console.log(`[Tracker] ⚡ Local intent detected: ${intentKey} — injecting from prefetched payload`);
+
+            this.handleUIInjection({
+                injection_target_selector: payload.targetSelector || 'body',
+                injection_position: payload.injectionPosition || 'afterend',
+                html_payload: payload.html || '',
+                scoped_css: payload.css || '',
+                javascript_payload: payload.js || '',
+                intent: intentKey,
+                id: uniqueId,
+                type: payload.type || 'inject',
+                persistence: 'session',
+                priority: 5,
+            });
+
+            this._lastInjectedIntent = intentKey;
+        }
+
+        // ─── Dwell Time ───────────────────────────────────────────────────────
 
         // --- Event Listeners ---
 
@@ -889,7 +1153,6 @@
             }, { capture: true });
         }
 
-        // --- Dwell Time ---
         initObserver() {
             const options = { threshold: 0.1 };
             this.dwellObserver = new IntersectionObserver((entries) => {
@@ -909,10 +1172,41 @@
                 });
             }, options);
 
-            // Observe existing
-            document.querySelectorAll('section, article, div[id]').forEach(el => {
-                if (el.id) this.dwellObserver.observe(el);
-            });
+            if (this.intentSelectorMap && Object.keys(this.intentSelectorMap).length > 0) {
+                // Use crawl-derived semantic selectors — accurate for any host website
+                console.log('[Tracker] Using crawl-derived intent selectors for dwell observation');
+                let observed = 0;
+                for (const [category, selectors] of Object.entries(this.intentSelectorMap)) {
+                    for (const selector of selectors) {
+                        try {
+                            const el = document.querySelector(selector);
+                            if (el) {
+                                // Tag element with semantic category for scoring
+                                el.setAttribute('data-vi-intent-category', category);
+                                // Ensure element has an ID for the dwell timer map
+                                if (!el.id) {
+                                    el.id = `vi-auto-${category}-${Math.random().toString(36).substr(2, 4)}`;
+                                }
+                                this.dwellObserver.observe(el);
+                                observed++;
+                            }
+                        } catch (e) { /* silently skip invalid selectors */ }
+                    }
+                }
+                console.log(`[Tracker] Observing ${observed} semantic elements`);
+
+                // Also observe generic elements as a supplement
+                document.querySelectorAll('section, article, div[id]').forEach(el => {
+                    if (el.id && !el.hasAttribute('data-vi-intent-category')) {
+                        this.dwellObserver.observe(el);
+                    }
+                });
+            } else {
+                // Fallback: generic element observation (original behavior)
+                document.querySelectorAll('section, article, div[id]').forEach(el => {
+                    if (el.id) this.dwellObserver.observe(el);
+                });
+            }
         }
 
         // --- Performance ---
