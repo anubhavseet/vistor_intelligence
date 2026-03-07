@@ -1,4 +1,4 @@
-import { Resolver, Subscription, Mutation, Args, Context } from '@nestjs/graphql';
+import { Resolver, Subscription, Mutation, Query, Args, Context } from '@nestjs/graphql';
 import { Inject, Logger } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { SessionManagerService } from './session-manager.service';
@@ -148,6 +148,18 @@ export class WebSocketTrackingResolver {
                             intent: parsedPayload.intent || 'general',
                             timestamp: Date.now(),
                         });
+                        // Persist as an active injection so page-load restoration can query it
+                        if (parsedPayload.injection_target_selector || parsedPayload.targetSelector) {
+                            await this.sessionManager.persistActiveInjection(sessionId, {
+                                id: parsedPayload.id,
+                                intent: parsedPayload.intent || 'general',
+                                targetSelector: parsedPayload.injection_target_selector || parsedPayload.targetSelector || 'body',
+                                position: parsedPayload.injection_position || parsedPayload.injectionPosition || 'afterend',
+                                htmlPayload: parsedPayload.html_payload || parsedPayload.html || '',
+                                scopedCss: parsedPayload.scoped_css || parsedPayload.css || '',
+                                jsPayload: parsedPayload.javascript_payload || parsedPayload.js || '',
+                            });
+                        }
                     }
                 }
 
@@ -195,6 +207,8 @@ export class WebSocketTrackingResolver {
             } else if (eventType === 'injection_dismissed') {
                 if (data?.injection_id) {
                     await this.sessionManager.updateInjectionRecord(sessionId, data.injection_id, { dismissed: true });
+                    // Remove from active injections so it won't be offered again on page load
+                    await this.sessionManager.removeActiveInjection(sessionId, data.injection_id);
                 }
             } else if (eventType === 'conversion') {
                 if (data?.lastInjectionId) {
@@ -270,6 +284,17 @@ export class WebSocketTrackingResolver {
     })
     uiInjection(@Args('sessionId') sessionId: string) {
         return this.pubSub.asyncIterator(`uiInjection:${sessionId}`);
+    }
+
+    /**
+     * Query: Get active injections currently rendering for a visitor session.
+     * The tracker calls this on page load as a secondary restoration path
+     * (e.g. when localStorage was cleared but Redis session is still alive).
+     */
+    @Query(() => String)
+    async getActiveInjections(@Args('sessionId') sessionId: string): Promise<string> {
+        const injections = await this.sessionManager.getActiveInjections(sessionId);
+        return JSON.stringify(injections);
     }
 
     /**

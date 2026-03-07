@@ -213,7 +213,11 @@
             this._currentIntentScore = isNaN(_storedScore) ? 40 : Math.min(Math.max(_storedScore, 0), 100);
             this.intentPayloads = null;      // Prefetched UI payloads: { intent: payload }
             this.intentSelectorMap = null;   // Crawl-derived semantic element map
-            this._lastInjectedIntent = null; // Prevents repeat injection of same intent
+            // Restore _lastInjectedIntent from sessionStorage so it survives page navigations.
+            // Without this, the dedup guard resets every page load leading to either
+            // double-injection on fast pages or (more commonly) stale state where the
+            // score never re-crosses the threshold before the visitor notices the injection is gone.
+            this._lastInjectedIntent = sessionStorage.getItem('vi_last_intent_' + this.siteId) || null;
 
             // Initialize
             this.bootstrap();
@@ -543,15 +547,76 @@
                     referrer: document.referrer
                 });
 
-                // Restore any persisted inline injections from previous sessions
-                // Use 1200ms delay to let the page DOM settle before injecting
-                setTimeout(() => this._restoreInlineInjections(), 1200);
+                // Restore any persisted inline injections from previous sessions.
+                // 500ms: let DOM settle but fire fast enough that visitor sees it immediately.
+                // 600ms: fast-path re-inject from intent classification if no localStorage entry exists
+                //         (handles the case where localStorage was cleared but sessionStorage intent is still set).
+                setTimeout(() => this._restoreInlineInjections(), 500);
+                setTimeout(() => this._maybeReInjectFromIntent(), 600);
 
             }, CONFIG.startUpDelay);
 
             // Online/Offline
             window.addEventListener('online', () => { this.isOnline = true; this.flushBuffer(); });
             window.addEventListener('offline', () => { this.isOnline = false; });
+
+            // ---- SPA Navigation Support ----
+            // In SPAs (React, Next.js, Vue), the page doesn't fully reload. We must intercept
+            // History API changes and popstate events to clear detached DOM nodes and re-trigger
+            // the restore logic, otherwise injections disappear forever.
+            let lastUrl = window.location.href;
+            const handleUrlChange = () => {
+                if (lastUrl !== window.location.href) {
+                    lastUrl = window.location.href;
+                    this._handleSpaNavigation();
+                }
+            };
+
+            // 1. Intercept pushState and replaceState (used by routers like React Router / Next.js)
+            const originalPushState = history.pushState;
+            history.pushState = function () {
+                originalPushState.apply(this, arguments);
+                handleUrlChange();
+            };
+            const originalReplaceState = history.replaceState;
+            history.replaceState = function () {
+                originalReplaceState.apply(this, arguments);
+                handleUrlChange();
+            };
+
+            // 2. Listen to back/forward browser buttons
+            window.addEventListener('popstate', handleUrlChange);
+        }
+
+        /**
+         * Cleans up orphaned DOM references and re-runs the restoration cycle
+         * when an SPA navigation happens without a full page reload.
+         */
+        _handleSpaNavigation() {
+            console.log('[Tracker] 🔄 SPA Navigation Detected:', window.location.pathname);
+
+            // 1. Track the new pageview
+            this.trackEvent('pageview', {
+                url: window.location.href,
+                title: document.title,
+                referrer: document.referrer
+            });
+
+            // 2. Clean up detached DOM nodes from activeInjections map
+            // Since the framework probably wiped them out, we need our internal state
+            // to reflect reality so the system doesn't think the injection is still active.
+            for (const [id, entry] of this.activeInjections.entries()) {
+                const el = (entry instanceof HTMLElement) ? entry : entry.element;
+                if (!document.contains(el)) {
+                    console.log(`[Tracker] 🧹 Cleaning up detached injection reference: ${id}`);
+                    this.activeInjections.delete(id);
+                }
+            }
+
+            // 3. Trigger the restoration cycle again
+            // Delay slightly to let the UI framework (React/Vue/etc) render the new page elements.
+            setTimeout(() => this._restoreInlineInjections(), 500);
+            setTimeout(() => this._maybeReInjectFromIntent(), 600);
         }
 
         // ---- Inline Injection Persistence (localStorage) ----
@@ -613,6 +678,13 @@
                 localStorage.setItem(key, JSON.stringify(entries));
                 console.log(`[Tracker] Cleared persisted injection for uniqueId: ${uniqueId}`);
             } catch (e) { }
+
+            // Also clear the sessionStorage intent flag so the visitor can earn a fresh
+            // injection if they re-qualify — dismissal = intentional, not a nav artifact.
+            try {
+                sessionStorage.removeItem('vi_last_intent_' + this.siteId);
+                this._lastInjectedIntent = null;
+            } catch (_) { }
         }
 
         _restoreInlineInjections() {
@@ -641,15 +713,24 @@
                 // Normalize current path — strip trailing slash for comparison
                 const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
 
-                // Restore entries within TTL whose stored path matches current path
-                // (normalized: ignore trailing slashes, allow sub-path prefix match)
+                // Restore entries within TTL.
+                // Intent-based injections are VISITOR-level (not page-level): restore on any page of the site
+                // because the visitor earned the intent classification, not the page.
+                // Legacy entries with no intent (or generic 'general' intent) keep old path-exact behaviour.
                 const validEntries = allEntries.filter(e => {
                     const age = Date.now() - e.timestamp;
                     if (age >= TTL_MS) {
                         console.log(`[Tracker] [Restore] Skipping entry (EXPIRED, ${Math.round(age / 3600000)}h old): intent=${e.intent}`);
                         return false;
                     }
-                    if (!e.path) return true; // legacy entry with no path → restore on any page
+                    // Intent-based injections: restore on any page of the site
+                    const isIntentBased = !!e.intent && e.intent !== 'general';
+                    if (isIntentBased) {
+                        console.log(`[Tracker] [Restore] ✅ Intent-based entry eligible on any page: intent=${e.intent}, uniqueId=${e.uniqueId}`);
+                        return true;
+                    }
+                    // Legacy / generic: path-exact match
+                    if (!e.path) return true; // very old entry with no path → restore on any page
                     const storedPath = e.path.replace(/\/$/, '') || '/';
                     const pathMatch = storedPath === currentPath || currentPath.startsWith(storedPath + '/');
                     if (!pathMatch) {
@@ -1005,12 +1086,67 @@
                 javascript_payload: payload.js || '',
                 intent: intentKey,
                 id: uniqueId,
-                type: payload.type || 'inject',
+                type: payload.type || 'inline_inject',
                 persistence: 'session',
                 priority: 5,
             });
 
             this._lastInjectedIntent = intentKey;
+            // Persist to sessionStorage so navigating away and back still remembers this intent
+            try { sessionStorage.setItem('vi_last_intent_' + this.siteId, intentKey); } catch (_) { }
+        }
+
+        /**
+         * Fast-path re-inject on page load for returning visitors whose intent was
+         * already classified in this browser tab session.
+         *
+         * This fires at 600ms (100ms after _restoreInlineInjections) and covers the
+         * gap where localStorage was cleared but sessionStorage still has the intent key.
+         * If _restoreInlineInjections already put something in the DOM, the fingerprint
+         * dedup guard in handleUIInjection will skip this silently.
+         */
+        _maybeReInjectFromIntent() {
+            const intent = this._lastInjectedIntent;
+            if (!intent) return;
+            if (!this.intentPayloads || !this.intentPayloads[intent]) {
+                console.log(`[Tracker] [ReInject] Saved intent "${intent}" found but no payload loaded yet, skipping.`);
+                return;
+            }
+
+            // If localStorage already has a valid entry for this intent, _restoreInlineInjections
+            // has handled it. Only proceed if no entry exists (e.g. localStorage cleared).
+            const key = this._getPersistedInjectionsKey();
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const entries = JSON.parse(raw);
+                    const TTL_MS = 24 * 60 * 60 * 1000;
+                    const hasValidEntry = entries.some(e =>
+                        e.intent === intent && (Date.now() - e.timestamp) < TTL_MS
+                    );
+                    if (hasValidEntry) {
+                        console.log(`[Tracker] [ReInject] localStorage entry exists for intent="${intent}", _restoreInlineInjections handles it.`);
+                        return;
+                    }
+                }
+            } catch (_) { }
+
+            console.log(`[Tracker] [ReInject] ⚡ Re-injecting from sessionStorage intent: ${intent}`);
+
+            const payload = this.intentPayloads[intent];
+            const uniqueId = `vi_reinject_${intent}_${Date.now()}`;
+            this.handleUIInjection({
+                injection_target_selector: payload.targetSelector || 'body',
+                injection_position: payload.injectionPosition || 'afterend',
+                html_payload: payload.html || '',
+                scoped_css: payload.css || '',
+                javascript_payload: payload.js || '',
+                intent,
+                id: uniqueId,
+                type: payload.type || 'inline_inject',
+                persistence: 'session',
+                priority: 5,
+            });
         }
 
         // ─── Dwell Time ───────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ export interface SessionState {
     engagementStage?: number;  // 0-3 for progressive engagement
     chatHistory?: string;      // JSON: Array<{ role, text, timestamp }>
     interestProfile?: string;  // JSON: { topics, pagesVisited, textCopied, timeOnPricing, objections }
+    activeInjections?: string; // JSON: Array<{ id, intent, targetSelector, position, htmlPayload, scopedCss, jsPayload, injectedAt }>
 }
 
 /**
@@ -447,6 +448,7 @@ export class SessionManagerService {
             engagementStage: parseInt(data.engagementStage || '0'),
             chatHistory: data.chatHistory || null,
             interestProfile: data.interestProfile || null,
+            activeInjections: data.activeInjections || null,
         };
     }
 
@@ -455,5 +457,74 @@ export class SessionManagerService {
      */
     async onModuleDestroy() {
         await this.redis.quit();
+    }
+
+    // ─── Active Injection Tracking ──────────────────────────────────────────────
+
+    /**
+     * Upsert an active injection record for the session.
+     * Call this when a UI payload is published to the visitor.
+     * One record per intent — newer injection replaces older one for same intent.
+     */
+    async persistActiveInjection(
+        sessionId: string,
+        record: {
+            id: string;
+            intent: string;
+            targetSelector: string;
+            position: string;
+            htmlPayload: string;
+            scopedCss?: string;
+            jsPayload?: string;
+        },
+    ): Promise<void> {
+        const session = await this.getSession(sessionId);
+        if (!session) return;
+
+        let active: any[] = [];
+        try {
+            active = session.activeInjections ? JSON.parse(session.activeInjections) : [];
+        } catch (e) {
+            active = [];
+        }
+
+        // Remove any existing entry for the same intent (one active injection per intent)
+        active = active.filter((a) => a.intent !== record.intent);
+        active.push({ ...record, injectedAt: Date.now() });
+
+        // Keep last 10
+        if (active.length > 10) active = active.slice(-10);
+
+        await this.updateSession(sessionId, {
+            activeInjections: JSON.stringify(active),
+        });
+    }
+
+    /**
+     * Remove an active injection record (e.g. when visitor dismisses it).
+     */
+    async removeActiveInjection(sessionId: string, injectionId: string): Promise<void> {
+        const session = await this.getSession(sessionId);
+        if (!session || !session.activeInjections) return;
+
+        try {
+            let active = JSON.parse(session.activeInjections);
+            active = active.filter((a: any) => a.id !== injectionId && !injectionId.startsWith(a.id));
+            await this.updateSession(sessionId, { activeInjections: JSON.stringify(active) });
+        } catch (e) { }
+    }
+
+    /**
+     * Get all currently active injections for a session.
+     * The tracker queries this on page load as a secondary restoration path.
+     */
+    async getActiveInjections(sessionId: string): Promise<any[]> {
+        const session = await this.getSession(sessionId);
+        if (!session || !session.activeInjections) return [];
+        try {
+            return JSON.parse(session.activeInjections);
+        } catch (e) {
+            return [];
+        }
     }
 }
