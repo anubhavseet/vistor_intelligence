@@ -201,10 +201,23 @@
             this.accumulatedDwell = {};
             this.formTimers = {};
             this.injectionCounts = {};
-            this.activeInjections = new Map(); // Multi-injection support: Map<injectionId, hostElement>
+            this.activeInjections = new Map(); // Map<injectionId, hostElement>
             this.lastInjectionId = null;
-            this.injectionHistory = []; // Local tracking of injection interactions
+            this.injectionHistory = [];
             this.MAX_SIMULTANEOUS_INJECTIONS = 3;
+
+            // Client-side intelligence state
+            // Restore accumulated score from sessionStorage so it survives page navigations
+            // within the same tab (sessionStorage is tab-scoped and clears when tab closes).
+            const _storedScore = parseFloat(sessionStorage.getItem('vi_intent_score_' + this.siteId) || '40');
+            this._currentIntentScore = isNaN(_storedScore) ? 40 : Math.min(Math.max(_storedScore, 0), 100);
+            this.intentPayloads = null;      // Prefetched UI payloads: { intent: payload }
+            this.intentSelectorMap = null;   // Crawl-derived semantic element map
+            // Restore _lastInjectedIntent from sessionStorage so it survives page navigations.
+            // Without this, the dedup guard resets every page load leading to either
+            // double-injection on fast pages or (more commonly) stale state where the
+            // score never re-crosses the threshold before the visitor notices the injection is gone.
+            this._lastInjectedIntent = sessionStorage.getItem('vi_last_intent_' + this.siteId) || null;
 
             // Initialize
             this.bootstrap();
@@ -322,6 +335,12 @@
                             } catch (e) { }
                         }
 
+                        // Prefetch UI payloads + intent selectors in parallel (non-blocking)
+                        await Promise.all([
+                            this._prefetchIntentPayloads(),
+                            this._prefetchIntentSelectors(),
+                        ]);
+
                         this.startTracking();
 
                     } catch (e) {
@@ -407,6 +426,99 @@
             }
         }
 
+        // ---- Client-Side Prefetch: UI Payloads + Intent Selectors ----
+
+        /**
+         * Fetches all pre-generated intent UI payloads into browser memory.
+         * After this, when an intent is detected locally, the payload is injected
+         * instantly without any WS round-trip.
+         */
+        async _prefetchIntentPayloads() {
+            try {
+                const query = `
+                    query GetIntentPayloads($siteId: String!) {
+                        getIntentPayloads(siteId: $siteId) {
+                            intent
+                            type
+                            html
+                            css
+                            js
+                            targetSelector
+                            injectionPosition
+                            injectionMode
+                        }
+                    }
+                `;
+                let httpUrl = this.apiUrl;
+                if (!httpUrl.endsWith('/graphql')) httpUrl = httpUrl.endsWith('/') ? httpUrl + 'graphql' : httpUrl + '/graphql';
+
+                const response = await fetch(httpUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, variables: { siteId: this.siteId } })
+                });
+                const result = await response.json();
+                const payloads = result.data?.getIntentPayloads;
+
+                if (payloads && payloads.length > 0) {
+                    this.intentPayloads = {};
+                    payloads.forEach(p => {
+                        this.intentPayloads[p.intent] = p;
+                    });
+                    console.log(`[Tracker] ✅ Prefetched ${payloads.length} intent UI payloads:`, Object.keys(this.intentPayloads));
+                } else {
+                    console.log('[Tracker] No intent payloads configured for this site.');
+                    this.intentPayloads = {};
+                }
+            } catch (e) {
+                console.warn('[Tracker] Failed to prefetch intent payloads', e);
+                this.intentPayloads = {};
+            }
+        }
+
+        /**
+         * Fetches the crawl-derived Intent Selector Map into browser memory.
+         * This map tells the tracker which DOM selectors correspond to which
+         * semantic content categories (pricing, features, cta, etc.) on THIS site.
+         */
+        async _prefetchIntentSelectors() {
+            try {
+                const query = `
+                    query GetIntentSelectors($siteId: String!) {
+                        getIntentSelectors(siteId: $siteId) {
+                            category
+                            selectors
+                            confidence
+                        }
+                    }
+                `;
+                let httpUrl = this.apiUrl;
+                if (!httpUrl.endsWith('/graphql')) httpUrl = httpUrl.endsWith('/') ? httpUrl + 'graphql' : httpUrl + '/graphql';
+
+                const response = await fetch(httpUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, variables: { siteId: this.siteId } })
+                });
+                const result = await response.json();
+                const entries = result.data?.getIntentSelectors;
+
+                if (entries && entries.length > 0) {
+                    this.intentSelectorMap = {};
+                    entries.forEach(e => {
+                        this.intentSelectorMap[e.category] = e.selectors;
+                    });
+                    console.log('[Tracker] ✅ Prefetched intent selector map:', Object.keys(this.intentSelectorMap));
+                } else {
+                    console.log('[Tracker] No intent selector map available (crawl may not have run yet).');
+                    this.intentSelectorMap = {}; // Initialize as empty object instead of null
+                }
+            } catch (e) {
+                console.warn('[Tracker] Failed to prefetch intent selectors', e);
+                this.intentSelectorMap = {}; // Initialize as empty object instead of null
+            }
+        }
+
         async startTracking() {
             if (this.isTrackingActive) return;
 
@@ -435,11 +547,253 @@
                     referrer: document.referrer
                 });
 
+                // Restore any persisted inline injections from previous sessions.
+                // 500ms: let DOM settle but fire fast enough that visitor sees it immediately.
+                // 600ms: fast-path re-inject from intent classification if no localStorage entry exists
+                //         (handles the case where localStorage was cleared but sessionStorage intent is still set).
+                setTimeout(() => this._restoreInlineInjections(), 500);
+                setTimeout(() => this._maybeReInjectFromIntent(), 600);
+
             }, CONFIG.startUpDelay);
 
             // Online/Offline
             window.addEventListener('online', () => { this.isOnline = true; this.flushBuffer(); });
             window.addEventListener('offline', () => { this.isOnline = false; });
+
+            // ---- SPA Navigation Support ----
+            // In SPAs (React, Next.js, Vue), the page doesn't fully reload. We must intercept
+            // History API changes and popstate events to clear detached DOM nodes and re-trigger
+            // the restore logic, otherwise injections disappear forever.
+            let lastUrl = window.location.href;
+            const handleUrlChange = () => {
+                if (lastUrl !== window.location.href) {
+                    lastUrl = window.location.href;
+                    this._handleSpaNavigation();
+                }
+            };
+
+            // 1. Intercept pushState and replaceState (used by routers like React Router / Next.js)
+            const originalPushState = history.pushState;
+            history.pushState = function () {
+                originalPushState.apply(this, arguments);
+                handleUrlChange();
+            };
+            const originalReplaceState = history.replaceState;
+            history.replaceState = function () {
+                originalReplaceState.apply(this, arguments);
+                handleUrlChange();
+            };
+
+            // 2. Listen to back/forward browser buttons
+            window.addEventListener('popstate', handleUrlChange);
+        }
+
+        /**
+         * Cleans up orphaned DOM references and re-runs the restoration cycle
+         * when an SPA navigation happens without a full page reload.
+         */
+        _handleSpaNavigation() {
+            console.log('[Tracker] 🔄 SPA Navigation Detected:', window.location.pathname);
+
+            // 1. Track the new pageview
+            this.trackEvent('pageview', {
+                url: window.location.href,
+                title: document.title,
+                referrer: document.referrer
+            });
+
+            // 2. Clean up detached DOM nodes from activeInjections map
+            // Since the framework probably wiped them out, we need our internal state
+            // to reflect reality so the system doesn't think the injection is still active.
+            for (const [id, entry] of this.activeInjections.entries()) {
+                const el = (entry instanceof HTMLElement) ? entry : entry.element;
+                if (!document.contains(el)) {
+                    console.log(`[Tracker] 🧹 Cleaning up detached injection reference: ${id}`);
+                    this.activeInjections.delete(id);
+                }
+            }
+
+            // 3. Trigger the restoration cycle again
+            // Delay slightly to let the UI framework (React/Vue/etc) render the new page elements.
+            setTimeout(() => this._restoreInlineInjections(), 500);
+            setTimeout(() => this._maybeReInjectFromIntent(), 600);
+        }
+
+        // ---- Inline Injection Persistence (localStorage) ----
+
+        _getPersistedInjectionsKey() {
+            return `vi_persisted_inline_${this.siteId}`;
+        }
+
+        _persistInlineInjection(intent, uniqueId, targetSelector, position, htmlPayload, scopedCss, jsPayload) {
+            try {
+                const key = this._getPersistedInjectionsKey();
+                console.log(`[Tracker] [Persist] Writing inline injection to localStorage. Key: ${key}, intent: ${intent}, uniqueId: ${uniqueId}`);
+
+                const raw = localStorage.getItem(key);
+                let entries = [];
+                if (raw) {
+                    try { entries = JSON.parse(raw); } catch (_) { entries = []; }
+                }
+
+                const currentFingerprint = `inline_inject|${targetSelector}|${position}|${(htmlPayload || '').substring(0, 150)}`;
+
+                // Remove any prior entry for same uniqueId OR same fingerprint (dedup) and expired entries
+                const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+                entries = entries.filter(e => {
+                    const age = Date.now() - e.timestamp;
+                    if (age >= TTL_MS) return false;
+                    if (e.uniqueId === uniqueId) return false;
+                    const fingerprint = `inline_inject|${e.targetSelector}|${e.position}|${(e.htmlPayload || '').substring(0, 150)}`;
+                    if (fingerprint === currentFingerprint) return false;
+                    return true;
+                });
+
+                entries.push({
+                    intent,
+                    uniqueId,
+                    targetSelector,
+                    position,
+                    htmlPayload,
+                    scopedCss,
+                    jsPayload: jsPayload || '',
+                    timestamp: Date.now(),
+                    path: window.location.pathname,
+                });
+
+                localStorage.setItem(key, JSON.stringify(entries));
+                console.log(`[Tracker] [Persist] ✅ Successfully persisted inline injection. localStorage key: "${key}", total entries: ${entries.length}`);
+            } catch (e) {
+                console.error('[Tracker] [Persist] ❌ FAILED to persist inline injection. localStorage may be blocked or full.', e);
+            }
+        }
+
+        _clearPersistedInjection(uniqueId) {
+            try {
+                const key = this._getPersistedInjectionsKey();
+                const raw = localStorage.getItem(key);
+                if (!raw) return;
+                let entries = JSON.parse(raw);
+                entries = entries.filter(e => e.uniqueId !== uniqueId);
+                localStorage.setItem(key, JSON.stringify(entries));
+                console.log(`[Tracker] Cleared persisted injection for uniqueId: ${uniqueId}`);
+            } catch (e) { }
+
+            // Also clear the sessionStorage intent flag so the visitor can earn a fresh
+            // injection if they re-qualify — dismissal = intentional, not a nav artifact.
+            try {
+                sessionStorage.removeItem('vi_last_intent_' + this.siteId);
+                this._lastInjectedIntent = null;
+            } catch (_) { }
+        }
+
+        _restoreInlineInjections() {
+            try {
+                const key = this._getPersistedInjectionsKey();
+                console.log(`[Tracker] [Restore] Checking localStorage for persisted injections. Key: "${key}"`);
+
+                const raw = localStorage.getItem(key);
+                if (!raw) {
+                    console.log('[Tracker] [Restore] No persisted injections found in localStorage.');
+                    return;
+                }
+
+                const TTL_MS = 24 * 60 * 60 * 1000;
+                let allEntries;
+                try {
+                    allEntries = JSON.parse(raw);
+                } catch (_) {
+                    console.warn('[Tracker] [Restore] Failed to parse localStorage entry, clearing corrupted data.');
+                    localStorage.removeItem(key);
+                    return;
+                }
+
+                console.log(`[Tracker] [Restore] Found ${allEntries.length} total entries in storage.`);
+
+                // Normalize current path — strip trailing slash for comparison
+                const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
+
+                // Restore entries within TTL.
+                // Intent-based injections are VISITOR-level (not page-level): restore on any page of the site
+                // because the visitor earned the intent classification, not the page.
+                // Legacy entries with no intent (or generic 'general' intent) keep old path-exact behaviour.
+                const validEntries = allEntries.filter(e => {
+                    const age = Date.now() - e.timestamp;
+                    if (age >= TTL_MS) {
+                        console.log(`[Tracker] [Restore] Skipping entry (EXPIRED, ${Math.round(age / 3600000)}h old): intent=${e.intent}`);
+                        return false;
+                    }
+                    // Intent-based injections: restore on any page of the site
+                    const isIntentBased = !!e.intent && e.intent !== 'general';
+                    if (isIntentBased) {
+                        console.log(`[Tracker] [Restore] ✅ Intent-based entry eligible on any page: intent=${e.intent}, uniqueId=${e.uniqueId}`);
+                        return true;
+                    }
+                    // Legacy / generic: path-exact match
+                    if (!e.path) return true; // very old entry with no path → restore on any page
+                    const storedPath = e.path.replace(/\/$/, '') || '/';
+                    const pathMatch = storedPath === currentPath || currentPath.startsWith(storedPath + '/');
+                    if (!pathMatch) {
+                        console.log(`[Tracker] [Restore] Skipping entry (PATH MISMATCH, stored: "${storedPath}", current: "${currentPath}"): intent=${e.intent}`);
+                    } else {
+                        console.log(`[Tracker] [Restore] ✅ Entry eligible for restore: intent=${e.intent}, uniqueId=${e.uniqueId}`);
+                    }
+                    return pathMatch;
+                });
+
+                if (validEntries.length === 0) {
+                    console.log('[Tracker] [Restore] No entries match current path/TTL. Nothing to restore.');
+                    // Clean up expired entries from storage
+                    const fresh = allEntries.filter(e => (Date.now() - e.timestamp) < TTL_MS);
+                    if (fresh.length < allEntries.length) localStorage.setItem(key, JSON.stringify(fresh));
+                    return;
+                }
+
+                console.log(`[Tracker] [Restore] Restoring ${validEntries.length} inline injection(s) from localStorage`);
+
+                validEntries.forEach((entry, i) => {
+                    // Stagger restores to avoid race conditions with page paint
+                    setTimeout(() => {
+                        // Content fingerprint check: prevent identical content restore
+                        const fingerprint = `inline_inject|${entry.targetSelector}|${entry.position}|${(entry.htmlPayload || '').substring(0, 150)}`;
+                        for (const [id, activeEntry] of this.activeInjections.entries()) {
+                            const existingFingerprint = (activeEntry instanceof HTMLElement) ? activeEntry.getAttribute('data-vi-fingerprint') : activeEntry.fingerprint;
+                            if (existingFingerprint === fingerprint) {
+                                console.log(`[Tracker] [Restore] Skipping restore for ${entry.uniqueId} — identical content already in DOM.`);
+                                return;
+                            }
+                        }
+
+                        // Bug fix: check BOTH the original ID and the restore-suffixed ID
+                        // to prevent duplicate injection when server also pushes the same payload
+                        if (document.getElementById(`vi-ai-${entry.uniqueId}`) ||
+                            document.getElementById(`vi-ai-${entry.uniqueId}_r`) ||
+                            document.querySelector(`[data-vi-original-id="${entry.uniqueId}"]`)) {
+                            console.log(`[Tracker] [Restore] Skipping restore for ${entry.uniqueId} — already in DOM.`);
+                            return;
+                        }
+
+                        console.log(`[Tracker] [Restore] Injecting restored entry: intent=${entry.intent}, selector=${entry.targetSelector}`);
+                        this._handleInlineInject(
+                            entry.uniqueId + '_r', // suffix _r marks it as a restore
+                            entry.targetSelector,
+                            entry.position,
+                            entry.htmlPayload,
+                            entry.scopedCss,
+                            entry.jsPayload,
+                            5, // default priority for restored
+                            entry.intent, // pass intent for clear-on-dismiss
+                            entry.uniqueId // pass original ID for guard attribute
+                        );
+                    }, i * 200);
+                });
+
+                // Clean up expired entries from storage
+                const fresh = allEntries.filter(e => (Date.now() - e.timestamp) < TTL_MS);
+                localStorage.setItem(key, JSON.stringify(fresh));
+            } catch (e) {
+                console.warn('[Tracker] Could not restore inline injections', e);
+            }
         }
 
         // --- Subscriptions ---
@@ -567,7 +921,7 @@
             // 2. Refresh URL
             this.signals.url = window.location.href;
 
-            // 3. check if any data to send
+            // 3. Check if any data to send
             const hasData = Object.keys(this.signals.dwell_time).length > 0 ||
                 this.signals.scroll_velocity > 0 ||
                 this.signals.events.length > 0 ||
@@ -576,15 +930,226 @@
 
             if (!hasData) return;
 
-            // 4. Send Batch
+            // 4. LOCAL SCORING + LOCAL UI INJECTION
             const batchData = JSON.parse(JSON.stringify(this.signals));
+            const localScore = this._scoreSignalsLocally(batchData);
+            const detectedIntent = this._detectIntent(batchData, localScore);
 
-            this.trackEvent('signals_batch', batchData);
+            console.log(`[Tracker] Local score: ${localScore}, detected intent: ${detectedIntent || 'none'}`);
 
-            // 5. Full Reset — clear all accumulated signals to avoid stale data
+            // Inject from prefetched payloads if intent detected
+            if (detectedIntent) {
+                this._maybeInjectLocal(detectedIntent);
+            }
+
+            // 5. Send Batch to backend (fire-and-forget for persistence/analytics)
+            // Include local-computed score and intent for the backend to persist
+            this.trackEvent('signals_batch', { ...batchData, localScore, detectedIntent });
+
+            // 6. Full Reset
             this.signals = this.resetSignals();
             this.accumulatedDwell = {};
         }
+
+        // ─── Client-Side Scoring Engine ─────────────────────────────────────────
+
+        /**
+         * Scores the current signal batch against the in-memory cumulative score.
+         * Uses semantic element categories from the intent selector map when available,
+         * falling back to element ID string matching for uncrawled sites.
+         */
+        _scoreSignalsLocally(signals) {
+            let score = this._currentIntentScore || 40;
+
+            // 1. Dwell Time (semantic category scoring)
+            if (signals.dwell_time) {
+                for (const [elementId, duration] of Object.entries(signals.dwell_time)) {
+                    const el = document.getElementById(elementId);
+                    const category = (el && el.getAttribute('data-vi-intent-category')) || this._guessCategory(elementId);
+
+                    if (category === 'pricing') score += 15;
+                    else if (category === 'features') score += 5;
+                    else if (category === 'testimonial') score += 10;
+                    else if (category === 'docs') score += 5;
+                    else if (category === 'cta') score += 8;
+                    else if (category === 'faq') score += 4;
+                    else if (category === 'hero') score += 3;
+                }
+            }
+
+            // 2. Behavioral signals
+            if (signals.scroll_velocity > 2000) score -= 10; // Fast scroll = scanning
+            if (signals.copy_text && signals.copy_text.length > 0) score += 15;
+            if (signals.text_selections && signals.text_selections.length > 0) score += 10;
+            if (signals.hesitation_event) score += 10;
+
+            if (signals.scroll_depth) {
+                if (signals.scroll_depth > 75) score += 10;
+                else if (signals.scroll_depth > 50) score += 5;
+            }
+
+            if (signals.rage_clicks > 0 || (signals.dead_clicks && signals.dead_clicks.length > 0)) {
+                score += 5;
+            }
+
+            score = Math.min(Math.max(score, 0), 100);
+            this._currentIntentScore = score; // Persist across batches in memory
+            // Persist to sessionStorage so score survives navigations within same tab
+            try { sessionStorage.setItem('vi_intent_score_' + this.siteId, String(score)); } catch (_) { }
+            return score;
+        }
+
+        /**
+         * Determines the semantic category of a DOM element by its ID string.
+         * This is the fallback path for sites that haven't been crawled yet.
+         */
+        _guessCategory(elementId) {
+            const id = (elementId || '').toLowerCase();
+            if (id.includes('pric') || id.includes('plan') || id.includes('billing')) return 'pricing';
+            if (id.includes('feature') || id.includes('benefit') || id.includes('product')) return 'features';
+            if (id.includes('testimonial') || id.includes('review') || id.includes('social-proof')) return 'testimonial';
+            if (id.includes('doc') || id.includes('tech') || id.includes('api')) return 'docs';
+            if (id.includes('cta') || id.includes('hero') || id.includes('header')) return 'cta';
+            if (id.includes('faq') || id.includes('question')) return 'faq';
+            return 'other';
+        }
+
+        /**
+         * Checks if the visitor has dwelled >= minSeconds on any element
+         * belonging to the given semantic category.
+         */
+        _hasCategoryDwell(dwell_time, category, minSeconds) {
+            if (!dwell_time) return false;
+            for (const [elementId, duration] of Object.entries(dwell_time)) {
+                const el = document.getElementById(elementId);
+                const cat = (el && el.getAttribute('data-vi-intent-category')) || this._guessCategory(elementId);
+                if (cat === category && duration >= minSeconds) return true;
+            }
+            return false;
+        }
+
+        /**
+         * Detects the primary intent from the current signal batch + score.
+         * Returns an intent key matching an IntentCategory value, or null.
+         */
+        _detectIntent(signals, score) {
+            const exitIntent = signals.events && signals.events.find(e => e.type === 'exit_intent');
+            const hasPricingDwell = this._hasCategoryDwell(signals.dwell_time, 'pricing', 10);
+            const hasFeatureDwell = this._hasCategoryDwell(signals.dwell_time, 'features', 15);
+            const hasFeatureSelections = signals.text_selections && signals.text_selections.length > 0 && hasFeatureDwell;
+            const isHesitating = signals.hesitation_event;
+            const isConfused = (signals.rage_clicks > 2 || (signals.dead_clicks && signals.dead_clicks.length > 3))
+                && (!signals.scroll_depth || signals.scroll_depth < 30);
+
+            if (exitIntent) return 'bounce_risk';
+            if (isHesitating) return 'hesitation';
+            if (isConfused) return 'confused';
+            if (hasPricingDwell) return 'price_sensitive';
+            if (hasFeatureSelections) return 'feature_evaluator';
+            if (score >= 70) return 'high_intent';
+            if (score >= 30) return 'researcher';
+            return null;
+        }
+
+        /**
+         * Attempts to inject the prefetched UI payload for a detected intent.
+         * Respects all existing cooldown, dedup, and limit guard rails.
+         */
+        _maybeInjectLocal(intentKey) {
+            if (!this.intentPayloads || !this.intentPayloads[intentKey]) return;
+
+            // Cooldown: minimum 60s between injections
+            const lastInjection = this.injectionHistory[this.injectionHistory.length - 1];
+            const timeSinceLastInjection = lastInjection ? Date.now() - lastInjection.timestamp : Infinity;
+            const COOLDOWN_MS = 60000;
+            if (timeSinceLastInjection < COOLDOWN_MS) return;
+
+            // Dismissal guard: skip if user dismissed 2+ in last 5 minutes
+            const recentDismissals = this.injectionHistory.filter(
+                h => h.dismissed && Date.now() - h.timestamp < 300000
+            ).length;
+            if (recentDismissals >= 2) return;
+
+            // Deduplicate: don't re-inject the same intent in one session
+            if (this._lastInjectedIntent === intentKey) return;
+
+            const payload = this.intentPayloads[intentKey];
+            const uniqueId = `vi_local_${intentKey}_${Date.now()}`;
+
+            console.log(`[Tracker] ⚡ Local intent detected: ${intentKey} — injecting from prefetched payload`);
+
+            this.handleUIInjection({
+                injection_target_selector: payload.targetSelector || 'body',
+                injection_position: payload.injectionPosition || 'afterend',
+                html_payload: payload.html || '',
+                scoped_css: payload.css || '',
+                javascript_payload: payload.js || '',
+                intent: intentKey,
+                id: uniqueId,
+                type: payload.type || 'inline_inject',
+                persistence: 'session',
+                priority: 5,
+            });
+
+            this._lastInjectedIntent = intentKey;
+            // Persist to sessionStorage so navigating away and back still remembers this intent
+            try { sessionStorage.setItem('vi_last_intent_' + this.siteId, intentKey); } catch (_) { }
+        }
+
+        /**
+         * Fast-path re-inject on page load for returning visitors whose intent was
+         * already classified in this browser tab session.
+         *
+         * This fires at 600ms (100ms after _restoreInlineInjections) and covers the
+         * gap where localStorage was cleared but sessionStorage still has the intent key.
+         * If _restoreInlineInjections already put something in the DOM, the fingerprint
+         * dedup guard in handleUIInjection will skip this silently.
+         */
+        _maybeReInjectFromIntent() {
+            const intent = this._lastInjectedIntent;
+            if (!intent) return;
+            if (!this.intentPayloads || !this.intentPayloads[intent]) {
+                console.log(`[Tracker] [ReInject] Saved intent "${intent}" found but no payload loaded yet, skipping.`);
+                return;
+            }
+
+            // If localStorage already has a valid entry for this intent, _restoreInlineInjections
+            // has handled it. Only proceed if no entry exists (e.g. localStorage cleared).
+            const key = this._getPersistedInjectionsKey();
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const entries = JSON.parse(raw);
+                    const TTL_MS = 24 * 60 * 60 * 1000;
+                    const hasValidEntry = entries.some(e =>
+                        e.intent === intent && (Date.now() - e.timestamp) < TTL_MS
+                    );
+                    if (hasValidEntry) {
+                        console.log(`[Tracker] [ReInject] localStorage entry exists for intent="${intent}", _restoreInlineInjections handles it.`);
+                        return;
+                    }
+                }
+            } catch (_) { }
+
+            console.log(`[Tracker] [ReInject] ⚡ Re-injecting from sessionStorage intent: ${intent}`);
+
+            const payload = this.intentPayloads[intent];
+            const uniqueId = `vi_reinject_${intent}_${Date.now()}`;
+            this.handleUIInjection({
+                injection_target_selector: payload.targetSelector || 'body',
+                injection_position: payload.injectionPosition || 'afterend',
+                html_payload: payload.html || '',
+                scoped_css: payload.css || '',
+                javascript_payload: payload.js || '',
+                intent,
+                id: uniqueId,
+                type: payload.type || 'inline_inject',
+                persistence: 'session',
+                priority: 5,
+            });
+        }
+
+        // ─── Dwell Time ───────────────────────────────────────────────────────
 
         // --- Event Listeners ---
 
@@ -724,7 +1289,6 @@
             }, { capture: true });
         }
 
-        // --- Dwell Time ---
         initObserver() {
             const options = { threshold: 0.1 };
             this.dwellObserver = new IntersectionObserver((entries) => {
@@ -744,10 +1308,41 @@
                 });
             }, options);
 
-            // Observe existing
-            document.querySelectorAll('section, article, div[id]').forEach(el => {
-                if (el.id) this.dwellObserver.observe(el);
-            });
+            if (this.intentSelectorMap && Object.keys(this.intentSelectorMap).length > 0) {
+                // Use crawl-derived semantic selectors — accurate for any host website
+                console.log('[Tracker] Using crawl-derived intent selectors for dwell observation');
+                let observed = 0;
+                for (const [category, selectors] of Object.entries(this.intentSelectorMap)) {
+                    for (const selector of selectors) {
+                        try {
+                            const el = document.querySelector(selector);
+                            if (el) {
+                                // Tag element with semantic category for scoring
+                                el.setAttribute('data-vi-intent-category', category);
+                                // Ensure element has an ID for the dwell timer map
+                                if (!el.id) {
+                                    el.id = `vi-auto-${category}-${Math.random().toString(36).substr(2, 4)}`;
+                                }
+                                this.dwellObserver.observe(el);
+                                observed++;
+                            }
+                        } catch (e) { /* silently skip invalid selectors */ }
+                    }
+                }
+                console.log(`[Tracker] Observing ${observed} semantic elements`);
+
+                // Also observe generic elements as a supplement
+                document.querySelectorAll('section, article, div[id]').forEach(el => {
+                    if (el.id && !el.hasAttribute('data-vi-intent-category')) {
+                        this.dwellObserver.observe(el);
+                    }
+                });
+            } else {
+                // Fallback: generic element observation (original behavior)
+                document.querySelectorAll('section, article, div[id]').forEach(el => {
+                    if (el.id) this.dwellObserver.observe(el);
+                });
+            }
         }
 
         // --- Performance ---
@@ -795,6 +1390,7 @@
 
             const {
                 injection_target_selector,
+                injection_position,
                 html_payload,
                 scoped_css,
                 javascript_payload,
@@ -807,8 +1403,34 @@
                 css_modifications,
             } = payload;
 
+            // Ensure intent is captured regardless of field name casing or position
+            const intentType = intent || payload.intent || 'general';
+            const uniqueId = injectionId || `vi_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+            // Content-based fingerprint for dedup (mutation type, selector, position, content snippet)
+            const fingerprint = `${mutationType}|${injection_target_selector}|${injection_position || ''}|${(html_payload || '').substring(0, 150)}`;
+
+            // Bug fix (Race condition): Debounce guard — prevent the same injection from
+            // being applied twice when both the restore (_r) and a live server push arrive
+            // concurrently on page load. If the injection (or its restore counterpart) is
+            // already in the DOM, skip silently.
+            if (document.getElementById(`vi-ai-${uniqueId}`) ||
+                document.getElementById(`vi-ai-${uniqueId}_r`) ||
+                document.querySelector(`[data-vi-original-id="${uniqueId}"]`)) {
+                console.log(`[Tracker] Injection ${uniqueId} already in DOM, skipping duplicate`);
+                return;
+            }
+
+            // Fingerprint check: avoid identical content even with different IDs
+            for (const [id, entry] of this.activeInjections.entries()) {
+                const existingFingerprint = (entry instanceof HTMLElement) ? entry.getAttribute('data-vi-fingerprint') : entry.fingerprint;
+                if (existingFingerprint === fingerprint) {
+                    console.log(`[Tracker] Injection content duplicate found for fingerprint: ${fingerprint}, skipping...`);
+                    return;
+                }
+            }
+
             // Check injection limits per intent
-            const intentType = intent || 'general';
             const currentCount = this.injectionCounts[intentType] || 0;
             let maxLimit = CONFIG.maxInjectionsPerIntent[intentType];
             if (typeof maxLimit === 'undefined') {
@@ -825,7 +1447,6 @@
                 return;
             }
 
-            const uniqueId = injectionId || `vi_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
             this.lastInjectionId = uniqueId;
 
             // Route to the appropriate mutation handler
@@ -841,6 +1462,9 @@
                     break;
                 case 'concierge':
                     this._handleConcierge(uniqueId, html_payload, priority);
+                    break;
+                case 'inline_inject':
+                    this._handleInlineInject(uniqueId, injection_target_selector, injection_position, html_payload, scoped_css, javascript_payload, priority, intentType);
                     break;
                 case 'inject':
                 default:
@@ -860,6 +1484,7 @@
             const host = document.createElement('div');
             host.id = `vi-ai-${uniqueId}`;
             host.setAttribute('data-vi-injection', uniqueId);
+            host.setAttribute('data-vi-fingerprint', `inject|${targetSelector}||${(htmlPayload || '').substring(0, 150)}`);
             host.style.cssText = `position: relative; z-index: ${2147483600 + priority};`;
 
             const shadow = host.attachShadow({ mode: 'open' });
@@ -901,6 +1526,88 @@
             this.activeInjections.set(uniqueId, host);
         }
 
+        // --- Mutation Type: INLINE_INJECT (Block flow Shadow DOM adjacent to existing element) ---
+        // originalId: when called from _restoreInlineInjections, the original uniqueId of the
+        //   persisted injection (before the '_r' suffix). Used to set data-vi-original-id so
+        //   the live server-push de-dup guard can detect an already-restored injection.
+        _handleInlineInject(uniqueId, targetSelector, injectionPosition, htmlPayload, scopedCss, jsPayload, priority, intent, originalId) {
+            const positions = ['beforebegin', 'afterbegin', 'beforeend', 'afterend'];
+            const position = positions.includes(injectionPosition) ? injectionPosition : 'afterend';
+
+            const targetElement = document.querySelector(targetSelector);
+            if (!targetElement) {
+                console.warn(`[Tracker] Inline inject: target not found: ${targetSelector}.`);
+                const isRestore = uniqueId.endsWith('_r');
+                if (!isRestore) {
+                    console.warn(`[Tracker] Falling back to body.`);
+                    // Fallback to standard inject at body
+                    this._handleInject(uniqueId, 'body', htmlPayload, scopedCss, jsPayload, priority);
+                }
+                return;
+            }
+
+            const host = document.createElement('div');
+            host.id = `vi-ai-${uniqueId}`;
+            host.setAttribute('data-vi-injection', uniqueId);
+            host.setAttribute('data-vi-inline', 'true');
+            host.setAttribute('data-vi-fingerprint', `inline_inject|${targetSelector}|${position}|${(htmlPayload || '').substring(0, 150)}`);
+            // Bug fix: store the original (pre-restore) ID so the live-push guard can find it
+            if (originalId) {
+                host.setAttribute('data-vi-original-id', originalId);
+            }
+            // Inline flow — no fixed positioning
+            host.style.cssText = `position: relative; display: block; width: 100%; z-index: ${2147483600 + priority};`;
+
+            const shadow = host.attachShadow({ mode: 'open' });
+            shadow.innerHTML = `
+                <style>
+                    ${scopedCss}
+                    :host { all: initial; display: block; font-family: inherit; width: 100%; }
+                    * { box-sizing: border-box; }
+                    .vi-internal-close {
+                        position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+                        background: rgba(0,0,0,0.2); color: #333; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center;
+                        cursor: pointer; font-size: 14px; line-height: 1; border: none;
+                        transition: background 0.2s; z-index: 10;
+                    }
+                    .vi-internal-close:hover { background: rgba(0,0,0,0.4); color: #fff; }
+                </style>
+                <div style="position: relative; width: 100%;">
+                    <button class="vi-internal-close" title="Dismiss">&times;</button>
+                    ${htmlPayload}
+                </div>
+            `;
+
+            if (jsPayload) {
+                this._executeInShadow(host, shadow, jsPayload, uniqueId);
+            }
+
+            // insertAdjacentElement respects document flow
+            targetElement.insertAdjacentElement(position, host);
+
+            this._attachInteractionTracking(shadow, host, uniqueId);
+            this.activeInjections.set(uniqueId, host);
+
+            // Persist for page refresh survival — only for new injections (not restores)
+            const persistIntent = intent || 'general';
+            if (!uniqueId.endsWith('_r')) {
+                console.log(`[Tracker] [InlineInject] Persisting injection to localStorage: intent=${persistIntent}, uniqueId=${uniqueId}, path=${window.location.pathname}`);
+                this._persistInlineInjection(persistIntent, uniqueId, targetSelector, position, htmlPayload, scopedCss, jsPayload);
+            } else {
+                console.log(`[Tracker] [InlineInject] RESTORED injection active: id=${uniqueId}`);
+            }
+
+            // Wire close button to clear from localStorage so dismiss = never replay
+            const closeBtn = shadow.querySelector('.vi-internal-close');
+            if (closeBtn) {
+                const baseId = originalId || uniqueId;
+                closeBtn.addEventListener('click', () => {
+                    this._clearPersistedInjection(baseId);
+                }, { once: true });
+            }
+        }
+
         // --- Mutation Type: HIGHLIGHT (CSS highlight + tooltip) ---
         _handleHighlight(uniqueId, targetSelector, tooltipHtml, tooltipCss, jsPayload, highlightCss, priority) {
             const target = document.querySelector(targetSelector);
@@ -930,6 +1637,7 @@
                 const tooltipHost = document.createElement('div');
                 tooltipHost.id = `vi-ai-${uniqueId}`;
                 tooltipHost.setAttribute('data-vi-injection', uniqueId);
+                tooltipHost.setAttribute('data-vi-fingerprint', `highlight|${targetSelector}||${(tooltipHtml || '').substring(0, 150)}`);
                 tooltipHost.style.cssText = `position: absolute; z-index: ${2147483600 + priority};`;
 
                 const shadow = tooltipHost.attachShadow({ mode: 'open' });
@@ -999,7 +1707,8 @@
                 try { new Function('target', jsPayload)(target); } catch (e) { console.error('[Tracker] Modify JS Error', e); }
             }
 
-            this.activeInjections.set(uniqueId, { element: target, originalStyles, originalHtml });
+            const fingerprint = `modify|${targetSelector}||${(jsPayload || JSON.stringify(cssModifications) || '').substring(0, 150)}`;
+            this.activeInjections.set(uniqueId, { element: target, originalStyles, originalHtml, fingerprint });
             this.trackEvent('injection_interaction', { injection_id: uniqueId, action: 'modify_applied' });
         }
 
@@ -1026,7 +1735,8 @@
                 try { new Function('target', jsPayload)(target); } catch (e) { console.error('[Tracker] Replace JS Error', e); }
             }
 
-            this.activeInjections.set(uniqueId, { element: target, originalHtml, originalStyles });
+            const fingerprint = `replace|${targetSelector}||${(htmlPayload || '').substring(0, 150)}`;
+            this.activeInjections.set(uniqueId, { element: target, originalHtml, originalStyles, fingerprint });
             this.trackEvent('injection_interaction', { injection_id: uniqueId, action: 'replace_applied' });
         }
 
@@ -1119,7 +1829,7 @@
             this.activeInjections.delete(injectionId);
             console.log(`[Tracker] Injection ${injectionId} undone`);
         }
-    
+
 
         // --- Mutation Type: CONCIERGE (AI Chat Widget) ---
         _handleConcierge(uniqueId, greeting, priority) {
@@ -1295,7 +2005,7 @@
                     if (response.suggestedActions) {
                         let actions = response.suggestedActions;
                         if (typeof actions === 'string') {
-                            try { actions = JSON.parse(actions); } catch(e) { actions = []; }
+                            try { actions = JSON.parse(actions); } catch (e) { actions = []; }
                         }
                         if (actions.length > 0) {
                             this._addChatActions(messagesEl, actions, inputEl);

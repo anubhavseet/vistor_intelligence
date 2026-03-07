@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { IntentCategory } from '../common/enums/intent.enum';
 import { Account } from '../common/schemas/account.schema';
+import { Site, SiteDocument } from '../common/schemas/site.schema';
 import { GeminiService } from '../ai-generation/gemini.service';
 import { QdrantService } from '../qdrant/qdrant.service';
 import { IntentPromptsService } from './intent-prompts.service';
@@ -10,13 +13,13 @@ import { SubscriptionService } from '../subscription/subscription.service';
 export interface SignalBatch {
   dwell_time: Record<string, number>;
   scroll_velocity: number;
-  scroll_depth?: number; // New
+  scroll_depth?: number;
   hesitation_event: boolean;
   rage_clicks: number;
   copy_text: string[];
-  text_selections?: string[]; // New
-  dead_clicks?: any[]; // New
-  events: { type: string; timestamp: number; payload?: any }[]; // Added payload
+  text_selections?: string[];
+  dead_clicks?: any[];
+  events: { type: string; timestamp: number; payload?: any }[];
   interactions?: Record<string, { clicks: number; hovers: number; inputs: number; last_timestamp: number }>;
   forms?: Record<string, { time_focused: number; refills: number }>;
   performance?: { lcp?: number; cls?: number; fid?: number };
@@ -24,7 +27,9 @@ export interface SignalBatch {
   mouse_trace?: { x: number; y: number; time: number }[];
   geolocation?: { lat: number; lng: number; accuracy: number };
   url?: string;
-  referrer?: string; // New
+  referrer?: string;
+  localScore?: number;   // Score computed by the tracker client-side
+  detectedIntent?: string; // Intent detected client-side
 }
 
 export interface IntentResult {
@@ -32,11 +37,11 @@ export interface IntentResult {
   category: 'Bouncer' | 'Researcher' | 'Lead';
   suggestedAction: string | null;
   uiPayload?: any;
-  detectedIntents?: string[]; // New: all detected intent signals
+  detectedIntents?: string[];
 }
 
 export interface EngagementContext {
-  stage: number;                // 0-3
+  stage: number;
   injectionHistory: Array<{
     id: string;
     type: string;
@@ -53,6 +58,7 @@ export class IntentService {
   private readonly logger = new Logger(IntentService.name);
 
   constructor(
+    @InjectModel(Site.name) private siteModel: Model<SiteDocument>,
     private geminiService: GeminiService,
     private qdrantService: QdrantService,
     private intentPromptsService: IntentPromptsService,
@@ -61,8 +67,12 @@ export class IntentService {
   ) { }
 
   /**
-   * Calculate Real-time Intent Score and optionally generate AI UI
-   * Now accepts engagement context for progressive engagement and injection history
+   * Calculate Real-time Intent Score and optionally generate AI UI.
+   *
+   * Architecture change: UI generation is now handled client-side by the tracker
+   * using prefetched payloads. The backend's role here is:
+   *  1. Validate / recalculate score for persistence and analytics.
+   *  2. Only generate UI server-side for the concierge chat trigger (edge case).
    */
   async analyzeAndGetUi(
     currentScore: number,
@@ -72,203 +82,50 @@ export class IntentService {
   ): Promise<IntentResult> {
 
     // 1. Calculate Score (Deterministic)
-    const { score, category, suggestedAction } = this.calculateRealTimeScore(currentScore, signals);
+    // If the client already sent a localScore use it as the baseline (more accurate),
+    // otherwise fall back to server-side heuristic calculation.
+    let score: number;
+    let category: 'Bouncer' | 'Researcher' | 'Lead';
+    let suggestedAction: string | null = null;
 
-    let uiPayload = null;
+    if (typeof signals.localScore === 'number' && signals.localScore > 0) {
+      // Use client-computed score for accuracy
+      score = signals.localScore;
+      if (score < 30) category = 'Bouncer';
+      else if (score <= 70) category = 'Researcher';
+      else category = 'Lead';
+    } else {
+      // Fallback: server-side heuristic (for legacy / non-upgraded tracker)
+      const result = this.calculateRealTimeScore(currentScore, signals);
+      score = result.score;
+      category = result.category;
+      suggestedAction = result.suggestedAction;
+    }
 
-    // 2. Trigger AI Generation if Intent is High or specific trigger
-    const exitIntent = signals.events ? signals.events.find(e => e.type === 'exit_intent') : null;
-    const isHesitating = signals.hesitation_event;
-
-    // Determine mapping to IntentPrompt keys (now with expanded detection)
-    let intentKey: IntentCategory | null = null;
+    // 2. Detect intents for analytics (no UI generation for regular batch events)
     const detectedIntents: string[] = [];
+    const exitIntent = signals.events?.find(e => e.type === 'exit_intent');
 
-    // Detect new intent categories
-    const hasPricingDwell = signals.dwell_time && Object.entries(signals.dwell_time)
-      .some(([id, duration]) => id.toLowerCase().includes('pricing') && duration > 10);
-    const hasFeatureDwell = signals.dwell_time && Object.entries(signals.dwell_time)
-      .some(([id, duration]) => (id.toLowerCase().includes('feature') || id.toLowerCase().includes('benefit')) && duration > 15);
-    const hasFeatureSelections = signals.text_selections && signals.text_selections.length > 0 && hasFeatureDwell;
-    const isConfused = (signals.rage_clicks > 2 || (signals.dead_clicks && signals.dead_clicks.length > 3))
-      && (!signals.scroll_depth || signals.scroll_depth < 30);
+    if (exitIntent) detectedIntents.push('bounce_risk');
+    if (signals.hesitation_event) detectedIntents.push('hesitation');
+    if (signals.rage_clicks > 2) detectedIntents.push('confused');
+    if (category === 'Lead') detectedIntents.push('high_intent');
+    if (category === 'Researcher') detectedIntents.push('researcher');
 
-    if (exitIntent) { intentKey = IntentCategory.BOUNCE_RISK; detectedIntents.push('bounce_risk'); }
-    if (isHesitating) { if (!intentKey) intentKey = IntentCategory.HESITATION; detectedIntents.push('hesitation'); }
-    if (isConfused) { if (!intentKey) intentKey = IntentCategory.CONFUSED; detectedIntents.push('confused'); }
-    if (hasPricingDwell) { if (!intentKey) intentKey = IntentCategory.PRICE_SENSITIVE; detectedIntents.push('price_sensitive'); }
-    if (hasFeatureSelections) { if (!intentKey) intentKey = IntentCategory.FEATURE_EVALUATOR; detectedIntents.push('feature_evaluator'); }
-    if (category === 'Lead') { if (!intentKey) intentKey = IntentCategory.HIGH_INTENT; detectedIntents.push('high_intent'); }
-    if (category === 'Researcher') { if (!intentKey) intentKey = IntentCategory.RESEARCHER; detectedIntents.push('researcher'); }
-
-    // Check if we should trigger based on having a valid intent key or existing logic
-    const shouldTriggerAi = intentKey || (category === 'Lead') || (suggestedAction !== null);
-
-    // Progressive engagement: check if we should skip based on stage and history
+    // 3. Concierge trigger (only remaining server-side UI generation)
+    // The rest of UI injection is handled client-side with prefetched payloads.
+    let uiPayload = null;
     const stage = engagementContext?.stage || 0;
     const history = engagementContext?.injectionHistory || [];
-    const recentDismissals = history.filter(h => h.dismissed && Date.now() - h.timestamp < 300000).length; // last 5 min
-    const shouldSkipDueToHistory = recentDismissals >= 2; // User dismissed 2+ in last 5 minutes
+    const conciergeSentThisSession = history.some(h => h.type === 'concierge');
+    const recentDismissals = history.filter(h => h.dismissed && Date.now() - h.timestamp < 300000).length;
 
-    // Phase 3: Injection cooldown — minimum 60s between injections (exit_intent bypasses)
-    const lastInjection = history[history.length - 1];
-    const timeSinceLastInjection = lastInjection ? Date.now() - lastInjection.timestamp : Infinity;
-    const COOLDOWN_MS = 60000; // 1 minute minimum
-    const isCooldownActive = timeSinceLastInjection < COOLDOWN_MS && !exitIntent;
-
-    if (shouldTriggerAi && !shouldSkipDueToHistory && !isCooldownActive) {
-      try {
-        // Check site settings for pre-generated UI preference
-        const site = await this.sitesService.getSiteBySiteId(siteId);
-        let usePreGenerated = site.settings?.usePreGeneratedIntentUI || false;
-
-        if (usePreGenerated && intentKey) {
-          // Use pre-generated UI from IntentPrompt
-          const customPrompt = await this.intentPromptsService.getPromptForIntent(siteId, intentKey);
-
-          if (customPrompt && customPrompt.generatedHtml) {
-            this.logger.log(`Using pre-generated UI for intent '${intentKey}'`);
-            uiPayload = {
-              injection_target_selector: 'body',
-              html_payload: customPrompt.generatedHtml,
-              scoped_css: customPrompt.generatedCss || '',
-              javascript_payload: customPrompt.generatedJs || ''
-            };
-          } else {
-            this.logger.warn(`No pre-generated UI found for intent '${intentKey}', falling back to on-the-go generation`);
-            usePreGenerated = false; // Fallback to on-the-go generation
-          }
-        }
-
-        // If not using pre-generated UI, generate on-the-go
-        if (!usePreGenerated || !uiPayload) {
-          // A. Understand Context
-          let queryText = "General interest in product";
-          const interests: string[] = [];
-
-          // Pre-compute mutation type for Gemini prompt
-          let targetMutationType = 'inject';
-          if (intentKey === IntentCategory.CONFUSED) targetMutationType = 'highlight';
-          else if (intentKey === IntentCategory.PRICE_SENSITIVE) targetMutationType = 'modify';
-          // Progressive engagement: limit to subtle types at early stages
-          if (stage <= 1 && targetMutationType === 'inject') targetMutationType = 'highlight';
-
-          // 1. Text Copy (Strongest)
-          if (signals.copy_text && signals.copy_text.length > 0) {
-            interests.push(...signals.copy_text);
-          }
-
-          // 2. Text Selection (Strong)
-          if (signals.text_selections && signals.text_selections.length > 0) {
-            interests.push(...signals.text_selections);
-          }
-
-          // 3. Dwell Time (Medium)
-          if (signals.dwell_time) {
-            const sortedDwell = Object.entries(signals.dwell_time)
-              .sort(([, a], [, b]) => b - a)
-              .slice(0, 3);
-            if (sortedDwell.length > 0) {
-              interests.push(...sortedDwell.map(([id]) => id.replace(/-/g, ' ')));
-            }
-          }
-
-          // 4. Dead Clicks (Frustration Context)
-          if (signals.dead_clicks && signals.dead_clicks.length > 0) {
-            // Maybe search for what they clicked on? For now, we use it to adjust tone.
-            interests.push(`User frustrated interacting with ${signals.dead_clicks[0].selector}`);
-          }
-
-          if (interests.length > 0) {
-            queryText = interests.join(' ');
-          }
-
-          // B. Search Semantic Context
-          const embedding = await this.geminiService.generateEmbedding(queryText);
-
-          const filters: any = {
-            must: [
-              { key: "siteId", match: { value: siteId } }
-            ]
-          };
-          if (signals.url.includes("localhost")) {
-            filters.must.push({ key: "url", match: { value: `${site.domain}${signals.url.split("/")[3]}` } });
-          } else if (signals.url) {
-            filters.must.push({ key: "url", match: { value: signals.url } });
-          }
-
-          const searchResults = await this.qdrantService.search(embedding, filters, 1);
-          const context = searchResults.length > 0 ? searchResults[0].payload : null;
-          console.log("Context:", context);
-          // C. Fetch Custom Prompt
-          let instruction = suggestedAction || "High intent engagement";
-
-          // Enhance instruction with behavioral narrative
-          let behaviorNarrative = "";
-          if (signals.scroll_depth && signals.scroll_depth > 80) behaviorNarrative += "User has read the entire page. ";
-          if (signals.text_selections && signals.text_selections.length > 0) behaviorNarrative += `User highlighted terms: "${signals.text_selections.slice(0, 3).join(', ')}". `;
-          if (signals.dead_clicks && signals.dead_clicks.length > 0) behaviorNarrative += "User appears frustrated, clicking on static elements. Offer help. ";
-          if (signals.referrer) {
-            try {
-              const currentHost = signals.url ? new URL(signals.url).hostname : '';
-              const refHost = new URL(signals.referrer).hostname;
-              if (currentHost && refHost !== currentHost) behaviorNarrative += `Incoming from: ${signals.referrer}. `;
-            } catch (e) { }
-          }
-
-          if (behaviorNarrative) instruction += ` Context: ${behaviorNarrative}`;
-
-          if (intentKey) {
-            const customPrompt = await this.intentPromptsService.getPromptForIntent(siteId, intentKey);
-            if (customPrompt) {
-              instruction = customPrompt.prompt + ` Context: ${behaviorNarrative}`;
-              this.logger.log(`Using custom prompt for intent '${intentKey}': ${instruction.substring(0, 50)}...`);
-            }
-          }
-
-          if (context) {
-            this.logger.log(`Generating UI on-the-go for intent: ${intentKey} on context: ${context.selector}`);
-            uiPayload = await this.geminiService.generateUiElement(
-              instruction,
-              (context.raw_html as string) || "",
-              (context.description as string) || "Standard business website",
-              site.designSystem,
-              targetMutationType,
-            );
-          } else {
-            uiPayload = await this.geminiService.generateUiElement(
-              instruction,
-              "",
-              "Standard business website",
-              site.designSystem,
-              targetMutationType,
-            );
-          }
-        }
-
-      } catch (e) {
-        this.logger.error('Failed to generate AI UI', e);
-      }
-    }
-
-    if (uiPayload && intentKey) {
-      uiPayload.intent = intentKey;
-    }
-
-    // Enrich UI payload with injection metadata
-    // Bug 2 Fix: Trigger concierge chat when engagement is high enough
-    const conciergeSentThisSession = (engagementContext?.injectionHistory || []).some(h => h.type === 'concierge');
-    if (!uiPayload && stage >= 2 && score >= 50 && !conciergeSentThisSession) {
-      // Build a contextual greeting based on detected intents
+    if (!conciergeSentThisSession && stage >= 2 && score >= 50 && recentDismissals < 2) {
       let greeting = "Hi! 👋 I noticed you've been exploring — is there anything I can help you with?";
       if (detectedIntents.includes('price_sensitive')) {
-        greeting = "Hi! 👋 I see you've been looking at our pricing. Happy to help you find the right plan for your needs!";
-      } else if (detectedIntents.includes('feature_evaluator')) {
-        greeting = "Hi! 👋 I noticed you're comparing features. Want me to help you understand which option fits best?";
+        greeting = "Hi! 👋 I see you've been looking at our pricing. Happy to help you find the right plan!";
       } else if (detectedIntents.includes('confused')) {
-        greeting = "Hi! 👋 It looks like you might have some questions — I'm here to help if you need anything!";
-      } else if (detectedIntents.includes('researcher')) {
-        greeting = "Hi! 👋 Doing some research? I can help you find the specific information you're looking for.";
+        greeting = "Hi! 👋 It looks like you might have some questions — I'm here to help!";
       }
 
       uiPayload = {
@@ -276,51 +133,20 @@ export class IntentService {
         html_payload: greeting,
         scoped_css: '',
         javascript_payload: '',
-        intent: intentKey || 'general',
+        intent: 'general',
         type: 'concierge',
       };
-      this.logger.log(`[Concierge] Triggering chat widget for session (stage: ${stage}, score: ${score})`);
+      this.logger.log(`[Concierge] Triggering chat widget (stage: ${stage}, score: ${score})`);
     }
 
+    // 4. Attach injection metadata if there's a server-side payload
     if (uiPayload) {
       const injectionId = `inj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-      // Determine mutation type based on intent
-      let mutationType = uiPayload.type || 'inject'; // Use pre-computed if set during generation
-      let persistence = 'session';
-      let priority = 5;
-
-      if (intentKey === IntentCategory.CONFUSED) {
-        mutationType = 'highlight';
-        persistence = 'page';
-        priority = 8;
-      } else if (intentKey === IntentCategory.PRICE_SENSITIVE) {
-        mutationType = 'modify';
-        persistence = 'page';
-        priority = 7;
-      } else if (intentKey === IntentCategory.BOUNCE_RISK && exitIntent) {
-        mutationType = 'inject'; // exit intent still uses overlay
-        persistence = 'session';
-        priority = 10;
-      } else if (intentKey === IntentCategory.FEATURE_EVALUATOR) {
-        mutationType = 'inject'; // sidebar with case studies
-        persistence = 'session';
-        priority = 6;
-      } else if (intentKey === IntentCategory.HIGH_INTENT) {
-        priority = 9;
-      }
-
-      // Note: progressive engagement override already handled pre-Gemini at line 154
-      // so Gemini generates content appropriate for the mutation type
-
       uiPayload.id = injectionId;
-      uiPayload.type = mutationType;
-      uiPayload.persistence = persistence;
-      uiPayload.priority = priority;
-    }
+      uiPayload.persistence = 'session';
+      uiPayload.priority = 5;
 
-    // Track AI call usage if an actual AI generation was made
-    if (uiPayload) {
+      // Track AI call usage
       try {
         const site = await this.sitesService.getSiteBySiteId(siteId);
         if (site?.userId) {
@@ -335,17 +161,17 @@ export class IntentService {
   }
 
   /**
-   * Calculate Real-time Intent Score based on Signal Batch (Deterministic)
+   * Calculate Real-time Intent Score based on Signal Batch (Deterministic).
+   * Used as a server-side fallback when no localScore is provided by the tracker.
    */
   calculateRealTimeScore(currentScore: number, signals: SignalBatch): IntentResult {
     let score = currentScore;
 
-    // Baseline if starting fresh
     if (score === 0) score = 40;
 
-    // 1. Dwell Time Analysis
+    // 1. Dwell Time Analysis (string-match fallback — less accurate on real sites)
     if (signals.dwell_time) {
-      for (const [elementId, duration] of Object.entries(signals.dwell_time)) {
+      for (const [elementId] of Object.entries(signals.dwell_time)) {
         const id = elementId.toLowerCase();
         if (id.includes('pricing')) score += 15;
         else if (id.includes('features') || id.includes('benefit')) score += 5;
@@ -355,52 +181,175 @@ export class IntentService {
     }
 
     // 2. Behavioral Signals
-    if (signals.scroll_velocity > 2000) score -= 10; // Fast scrolling = scanning
-    if (signals.copy_text && signals.copy_text.length > 0) score += 15; // High interest
-    if (signals.text_selections && signals.text_selections.length > 0) score += 10; // Reading detail
-    if (signals.hesitation_event) score += 10; // Considered clicking CTA
+    if (signals.scroll_velocity > 2000) score -= 10;
+    if (signals.copy_text?.length > 0) score += 15;
+    if (signals.text_selections?.length > 0) score += 10;
+    if (signals.hesitation_event) score += 10;
 
-    // Scroll Depth
     if (signals.scroll_depth) {
       if (signals.scroll_depth > 75) score += 10;
       else if (signals.scroll_depth > 50) score += 5;
     }
 
-    // Dead Clicks / Rage Clicks (Ambiguous - could be high intent but frustrated)
-    if (signals.rage_clicks > 0 || (signals.dead_clicks && signals.dead_clicks.length > 0)) {
-      // We don't dock points, but we change category to 'Frustrated' logic handled in UI generation
-      score += 5; // They are trying to do something
-    }
+    if (signals.rage_clicks > 0) score += 5;
 
-    // 3. Exit Intent Logic
-    const exitIntent = signals.events ? signals.events.find(e => e.type === 'exit_intent') : null;
-
-    // Clamp Score
     score = Math.min(Math.max(score, 0), 100);
 
-    // 4. Categorization
     let category: 'Bouncer' | 'Researcher' | 'Lead';
     if (score < 30) category = 'Bouncer';
     else if (score <= 70) category = 'Researcher';
     else category = 'Lead';
 
-    // 5. Action Triggers
+    const exitIntent = signals.events?.find(e => e.type === 'exit_intent');
     let suggestedAction: string | null = null;
-
-    if (exitIntent) {
-      if (category === 'Lead') {
-        suggestedAction = 'Create a high-converting "Wait! Don\'t Go" exit-intent modal offering a special 10% discount code to retain the user.';
-      }
-      // If Bouncer, do nothing (null)
-    } else {
-      if (score > 80) suggestedAction = 'Generate a sophisticated, non-intrusive priority support chat invitation widget floating at the bottom right.';
-      else if (score > 50) suggestedAction = 'Create a subtle slide-in notification suggesting they contact us for a personalized offer.';
+    if (exitIntent && category === 'Lead') {
+      suggestedAction = "Create a high-converting \"Wait! Don't Go\" exit-intent modal.";
     }
 
     return { score, category, suggestedAction };
   }
 
-  // Keeping legacy methods for compatibility
+  // ─── INTENT SELECTOR MAP ──────────────────────────────────────────────────
+
+  /**
+   * Returns the stored Intent Selector Map as an array of IntentSelectorEntry objects.
+   * Called by the public getIntentSelectors GraphQL query (tracker SDK).
+   */
+  async getIntentSelectorEntries(siteId: string): Promise<Array<{
+    category: string;
+    selectors: string[];
+    confidence: number;
+  }>> {
+    const site = await this.siteModel.findOne({ siteId }).exec();
+    if (!site?.intentSelectorMap) return [];
+
+    return Object.entries(site.intentSelectorMap).map(([category, data]) => ({
+      category,
+      selectors: data.selectors || [],
+      confidence: data.confidence || 0,
+    }));
+  }
+
+  /**
+   * Builds an Intent Selector Map from crawled Qdrant HTML chunks using Gemini classification.
+   *
+   * For each crawled HTML chunk stored in Qdrant for this site, Gemini is asked to:
+   *  1. Identify the semantic category (pricing, features, testimonial, cta, docs, hero, faq, other)
+   *  2. Extract the most specific stable CSS selector for the section root element.
+   *
+   * Results are aggregated and persisted to Site.intentSelectorMap and cached.
+   *
+   * This runs once after a crawl completes (triggered by the crawler processor)
+   * and can be manually triggered via the rebuildIntentSelectorMap mutation.
+   */
+  async buildIntentSelectorMap(siteId: string): Promise<void> {
+    this.logger.log(`[IntentSelectorMap] Building for site: ${siteId}`);
+
+    // 1. Fetch all crawled chunks from Qdrant for this site (cap at 50 to limit Gemini calls)
+    const points = await this.qdrantService.scroll({
+      must: [{ key: 'siteId', match: { value: siteId } }]
+    }, 50);
+
+    if (!points || points.length === 0) {
+      this.logger.warn(`[IntentSelectorMap] No Qdrant points found for site ${siteId}`);
+      return;
+    }
+
+    this.logger.log(`[IntentSelectorMap] Processing ${points.length} Qdrant chunks in batches of 10`);
+
+    // 2. Classify chunks in batches of 10 with a 2s delay between batches.
+    //    Each call within a batch runs in parallel and uses key rotation via getRotatedModel().
+    //    This prevents hitting Gemini rate limits on large crawls (100-200+ pages).
+    const BATCH_SIZE = 10;
+    const BATCH_DELAY_MS = 2000;
+    const categoryMap: Record<string, { selectors: string[]; confidence: number }> = {};
+
+    const classifyChunk = async (point: any): Promise<void> => {
+      const rawHtml = point.payload?.raw_html as string;
+      const existingSelector = point.payload?.selector as string;
+
+      if (!rawHtml || rawHtml.trim() === '') return;
+
+      // Truncate to first 2000 chars to keep token usage low
+      const htmlSnippet = rawHtml.substring(0, 2000);
+
+      const classificationPrompt = `You are an HTML semantic classifier for a SaaS website intelligence platform.
+
+Given the following HTML snippet from a website page, do two things:
+1. Classify the PRIMARY semantic purpose of this section.
+   Categories (pick ONE): pricing | features | testimonial | faq | hero | cta | contact | docs | blog | nav | footer | other
+2. Return the MOST SPECIFIC stable CSS selector for the ROOT element of this section.
+   Prefer exact #id selectors if present. Otherwise use a tag+class combo. Use the existing selector hint if available.
+
+Existing selector hint: ${existingSelector || 'none'}
+
+HTML snippet:
+${htmlSnippet}
+
+Respond ONLY with valid JSON (no markdown, no explanation):
+{"category": "pricing", "selector": "#pricing-table", "confidence": 0.92}`;
+
+      try {
+        // generateText() internally calls getRotatedModel() which rotates API keys
+        const response = await this.geminiService.generateText(classificationPrompt);
+        const clean = response.replace(/```json|```/g, '').trim();
+        const parsed: { category: string; selector: string; confidence: number } = JSON.parse(clean);
+
+        if (!parsed.category || !parsed.selector) return;
+
+        const cat = parsed.category.toLowerCase().trim();
+        if (!categoryMap[cat]) {
+          categoryMap[cat] = { selectors: [], confidence: parsed.confidence || 0.5 };
+        }
+        if (!categoryMap[cat].selectors.includes(parsed.selector)) {
+          categoryMap[cat].selectors.push(parsed.selector);
+        }
+        // Running average confidence
+        categoryMap[cat].confidence = (categoryMap[cat].confidence + (parsed.confidence || 0.5)) / 2;
+      } catch (e) {
+        this.logger.warn(`[IntentSelectorMap] Failed to classify chunk: ${e.message}`);
+      }
+    };
+
+    // Split points into batches of BATCH_SIZE and process sequentially
+    for (let i = 0; i < points.length; i += BATCH_SIZE) {
+      const batch = points.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(points.length / BATCH_SIZE);
+
+      this.logger.log(`[IntentSelectorMap] Batch ${batchNum}/${totalBatches} — classifying ${batch.length} chunks`);
+
+      // Each chunk in the batch runs in parallel (keys rotate per call via getRotatedModel)
+      await Promise.allSettled(batch.map(classifyChunk));
+
+      // Wait between batches to respect Gemini rate limits (skip delay after the last batch)
+      if (i + BATCH_SIZE < points.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+      }
+    }
+
+    if (Object.keys(categoryMap).length === 0) {
+      this.logger.warn(`[IntentSelectorMap] No classifications produced for site ${siteId}`);
+      return;
+    }
+
+    // 3. Persist to Site document
+    await this.siteModel.findOneAndUpdate(
+      { siteId },
+      {
+        $set: {
+          intentSelectorMap: categoryMap,
+          intentSelectorMapBuiltAt: new Date(),
+        }
+      },
+      { upsert: false }
+    ).exec();
+
+    this.logger.log(`[IntentSelectorMap] ✅ Built ${Object.keys(categoryMap).length} categories for site ${siteId}: ${Object.keys(categoryMap).join(', ')}`);
+  }
+
+  // ─── LEGACY METHODS (kept for analytics pipeline) ────────────────────────
+
   calculateEngagementScore(account: Account): number {
     let score = 0;
     score += Math.min(account.totalSessions * 5, 30);

@@ -27,6 +27,15 @@ export class IntentPrompt {
     @Prop({ type: String })
     generatedJs?: string;
 
+    @Prop({ type: String, enum: ['popup', 'inline'], default: 'popup' })
+    injectionMode: 'popup' | 'inline';
+
+    @Prop({ type: String })
+    generatedTargetSelector?: string; // Stored selector from generated UI
+
+    @Prop({ type: String })
+    generatedInjectionPosition?: string; // insertAdjacentHTML position for inline mode
+
     @Prop({ type: Boolean, default: true })
     isActive: boolean;
 }

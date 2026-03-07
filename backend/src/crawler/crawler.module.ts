@@ -8,6 +8,7 @@ import { WebsiteCrawlerProcessor } from './processors/website-crawler.processor'
 import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { QdrantModule } from '../qdrant/qdrant.module';
 import { SubscriptionModule } from '../subscription/subscription.module';
+import { IntentModule } from '../intent/intent.module';
 import { CrawlJob, CrawlJobSchema } from '../common/schemas/crawl-job.schema';
 import { Site, SiteSchema } from '../common/schemas/site.schema';
 
@@ -23,6 +24,7 @@ import { Site, SiteSchema } from '../common/schemas/site.schema';
         AiGenerationModule,
         QdrantModule,
         forwardRef(() => SubscriptionModule),
+        forwardRef(() => IntentModule),
     ],
     providers: [
         CrawlerService,
