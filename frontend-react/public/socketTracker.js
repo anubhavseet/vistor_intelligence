@@ -200,7 +200,22 @@
             this.activeDwellTimers = {};
             this.accumulatedDwell = {};
             this.formTimers = {};
-            this.injectionCounts = {};
+            try {
+                const storedCountsRaw = localStorage.getItem('vi_injection_counts_' + this.siteId);
+                if (storedCountsRaw) {
+                    const parsed = JSON.parse(storedCountsRaw);
+                    const TTL_MS = 24 * 60 * 60 * 1000;
+                    if (parsed && parsed.timestamp && (Date.now() - parsed.timestamp < TTL_MS)) {
+                        this.injectionCounts = parsed.counts || {};
+                    } else {
+                        this.injectionCounts = {};
+                    }
+                } else {
+                    this.injectionCounts = {};
+                }
+            } catch (e) {
+                this.injectionCounts = {};
+            }
             this.activeInjections = new Map(); // Map<injectionId, hostElement>
             this.lastInjectionId = null;
             this.injectionHistory = [];
@@ -336,10 +351,9 @@
                         }
 
                         // Prefetch UI payloads + intent selectors in parallel (non-blocking)
-                        await Promise.all([
-                            this._prefetchIntentPayloads(),
-                            this._prefetchIntentSelectors(),
-                        ]);
+                        // Fire them asynchronously so they don't block startTracking (zero time lag)
+                        this._prefetchIntentPayloads();
+                        this._prefetchIntentSelectors();
 
                         this.startTracking();
 
@@ -434,6 +448,17 @@
          * instantly without any WS round-trip.
          */
         async _prefetchIntentPayloads() {
+            // Try to load from localStorage synchronously
+            try {
+                const cached = localStorage.getItem('vi_intent_payloads_' + this.siteId);
+                if (cached) {
+                    this.intentPayloads = JSON.parse(cached);
+                    console.log(`[Tracker] ⚡ Loaded prefetched UI payloads from localStorage:`, Object.keys(this.intentPayloads));
+                }
+            } catch (e) {
+                console.warn('[Tracker] Failed to load cached intent payloads', e);
+            }
+
             try {
                 const query = `
                     query GetIntentPayloads($siteId: String!) {
@@ -465,14 +490,80 @@
                     payloads.forEach(p => {
                         this.intentPayloads[p.intent] = p;
                     });
-                    console.log(`[Tracker] ✅ Prefetched ${payloads.length} intent UI payloads:`, Object.keys(this.intentPayloads));
+                    console.log(`[Tracker] ✅ Prefetched ${payloads.length} intent UI payloads from server:`, Object.keys(this.intentPayloads));
+                    try {
+                        localStorage.setItem('vi_intent_payloads_' + this.siteId, JSON.stringify(this.intentPayloads));
+                    } catch (e) {
+                        console.warn('[Tracker] Failed to cache intent payloads', e);
+                    }
+
+                    // 🔥 HOT UPDATE ALGORITHM 🔥
+                    // If we have any active inline injections that were restored from cache,
+                    // silently update their shadow DOM HTML/CSS with this fresh server payload
+                    // so there is zero time lag but dashboard updates still apply live!
+                    for (const [uniqueId, host] of this.activeInjections.entries()) {
+                        if (host instanceof HTMLElement && host.hasAttribute('data-vi-inline')) {
+                            const intent = host.getAttribute('data-vi-intent');
+                            if (intent && this.intentPayloads[intent]) {
+                                const fresh = this.intentPayloads[intent];
+                                const shadow = host.shadowRoot;
+                                if (shadow) {
+                                    const targetSelector = host.getAttribute('data-vi-target') || 'unknown';
+                                    const position = host.getAttribute('data-vi-position') || 'afterend';
+                                    const currentFingerprint = host.getAttribute('data-vi-fingerprint');
+                                    const freshFingerprint = `inline_inject|${targetSelector}|${position}|${(fresh.html || '').substring(0, 150)}`;
+
+                                    if (currentFingerprint !== freshFingerprint) {
+                                        console.log(`[Tracker] 🔄 Hot-updating restored injection ${uniqueId} with fresh dashboard payload for intent: ${intent}`);
+                                        host.setAttribute('data-vi-fingerprint', freshFingerprint);
+                                        shadow.innerHTML = `
+                                              <style>
+                                                  ${fresh.css || ''}
+                                                  :host { all: initial; display: block; font-family: inherit; width: 100%; }
+                                                  * { box-sizing: border-box; }
+                                                  .vi-internal-close {
+                                                      position: absolute; top: 8px; right: 8px; width: 22px; height: 22px;
+                                                      background: rgba(0,0,0,0.2); color: #333; border-radius: 50%;
+                                                      display: flex; align-items: center; justify-content: center;
+                                                      cursor: pointer; font-size: 14px; line-height: 1; border: none;
+                                                      transition: background 0.2s; z-index: 10;
+                                                  }
+                                                  .vi-internal-close:hover { background: rgba(0,0,0,0.4); color: #fff; }
+                                              </style>
+                                              <div style="position: relative; width: 100%;">
+                                                  <button class="vi-internal-close" title="Dismiss">&times;</button>
+                                                  ${fresh.html || ''}
+                                              </div>
+                                          `;
+                                        if (fresh.js) {
+                                            this._executeInShadow(host, shadow, fresh.js, uniqueId);
+                                        }
+                                        // Re-attach form listeners manually to avoid double click listeners on shadow
+                                        shadow.querySelectorAll('form').forEach(form => {
+                                            form.addEventListener('submit', (e) => {
+                                                this.trackEvent('conversion', { type: 'form_submit', lastInjectionId: uniqueId, attribution: 'auto' });
+                                            });
+                                        });
+                                        const closeBtn = shadow.querySelector('.vi-internal-close');
+                                        if (closeBtn) {
+                                            const baseId = host.getAttribute('data-vi-original-id') || uniqueId;
+                                            closeBtn.addEventListener('click', () => { this._clearPersistedInjection(baseId); }, { once: true });
+                                        }
+                                        // Ensure localStorage has the newest fingerprint copy
+                                        this._persistInlineInjection(intent, host.getAttribute('data-vi-original-id') || uniqueId, targetSelector, position, fresh.html, fresh.css, fresh.js);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     console.log('[Tracker] No intent payloads configured for this site.');
                     this.intentPayloads = {};
+                    try { localStorage.removeItem('vi_intent_payloads_' + this.siteId); } catch (e) { }
                 }
             } catch (e) {
                 console.warn('[Tracker] Failed to prefetch intent payloads', e);
-                this.intentPayloads = {};
+                if (!this.intentPayloads) this.intentPayloads = {};
             }
         }
 
@@ -482,6 +573,17 @@
          * semantic content categories (pricing, features, cta, etc.) on THIS site.
          */
         async _prefetchIntentSelectors() {
+            // Try to load from localStorage synchronously
+            try {
+                const cached = localStorage.getItem('vi_intent_selectors_' + this.siteId);
+                if (cached) {
+                    this.intentSelectorMap = JSON.parse(cached);
+                    console.log(`[Tracker] ⚡ Loaded prefetched intent selector map from localStorage:`, Object.keys(this.intentSelectorMap));
+                }
+            } catch (e) {
+                console.warn('[Tracker] Failed to load cached intent selector map', e);
+            }
+
             try {
                 const query = `
                     query GetIntentSelectors($siteId: String!) {
@@ -508,14 +610,20 @@
                     entries.forEach(e => {
                         this.intentSelectorMap[e.category] = e.selectors;
                     });
-                    console.log('[Tracker] ✅ Prefetched intent selector map:', Object.keys(this.intentSelectorMap));
+                    console.log('[Tracker] ✅ Prefetched intent selector map from server:', Object.keys(this.intentSelectorMap));
+                    try {
+                        localStorage.setItem('vi_intent_selectors_' + this.siteId, JSON.stringify(this.intentSelectorMap));
+                    } catch (e) {
+                        console.warn('[Tracker] Failed to cache intent selector map', e);
+                    }
                 } else {
                     console.log('[Tracker] No intent selector map available (crawl may not have run yet).');
                     this.intentSelectorMap = {}; // Initialize as empty object instead of null
+                    try { localStorage.removeItem('vi_intent_selectors_' + this.siteId); } catch (e) { }
                 }
             } catch (e) {
                 console.warn('[Tracker] Failed to prefetch intent selectors', e);
-                this.intentSelectorMap = {}; // Initialize as empty object instead of null
+                if (!this.intentSelectorMap) this.intentSelectorMap = {}; // Initialize as empty object instead of null
             }
         }
 
@@ -615,7 +723,10 @@
 
             // 3. Trigger the restoration cycle again
             // Delay slightly to let the UI framework (React/Vue/etc) render the new page elements.
-            setTimeout(() => this._restoreInlineInjections(), 500);
+            setTimeout(() => {
+                this._restoreInlineInjections();
+                this.initObserver(); // Restart dwell observation on new elements
+            }, 500);
             setTimeout(() => this._maybeReInjectFromIntent(), 600);
         }
 
@@ -754,8 +865,24 @@
                 validEntries.forEach((entry, i) => {
                     // Stagger restores to avoid race conditions with page paint
                     setTimeout(() => {
+                        // Dynamically pull latest matching intent payload if available.
+                        // This ensures dashboard updates reflect properly on saved injections.
+                        let restoreHtml = entry.htmlPayload;
+                        let restoreCss = entry.scopedCss;
+                        let restoreJs = entry.jsPayload;
+
+                        if (entry.intent && entry.intent !== 'general' && this.intentPayloads && this.intentPayloads[entry.intent]) {
+                            const latestPayload = this.intentPayloads[entry.intent];
+                            restoreHtml = latestPayload.html || restoreHtml;
+                            restoreCss = latestPayload.css || restoreCss;
+                            restoreJs = latestPayload.js || restoreJs;
+                            // Optionally, update selector and position if they've changed on dashboard
+                            entry.targetSelector = latestPayload.targetSelector || entry.targetSelector;
+                            entry.position = latestPayload.injectionPosition || entry.position;
+                        }
+
                         // Content fingerprint check: prevent identical content restore
-                        const fingerprint = `inline_inject|${entry.targetSelector}|${entry.position}|${(entry.htmlPayload || '').substring(0, 150)}`;
+                        const fingerprint = `inline_inject|${entry.targetSelector}|${entry.position}|${(restoreHtml || '').substring(0, 150)}`;
                         for (const [id, activeEntry] of this.activeInjections.entries()) {
                             const existingFingerprint = (activeEntry instanceof HTMLElement) ? activeEntry.getAttribute('data-vi-fingerprint') : activeEntry.fingerprint;
                             if (existingFingerprint === fingerprint) {
@@ -778,9 +905,9 @@
                             entry.uniqueId + '_r', // suffix _r marks it as a restore
                             entry.targetSelector,
                             entry.position,
-                            entry.htmlPayload,
-                            entry.scopedCss,
-                            entry.jsPayload,
+                            restoreHtml,
+                            restoreCss,
+                            restoreJs,
                             5, // default priority for restored
                             entry.intent, // pass intent for clear-on-dismiss
                             entry.uniqueId // pass original ID for guard attribute
@@ -1134,7 +1261,7 @@
             console.log(`[Tracker] [ReInject] ⚡ Re-injecting from sessionStorage intent: ${intent}`);
 
             const payload = this.intentPayloads[intent];
-            const uniqueId = `vi_reinject_${intent}_${Date.now()}`;
+            const uniqueId = `vi_reinject_${intent}_${Date.now()}_r`;
             this.handleUIInjection({
                 injection_target_selector: payload.targetSelector || 'body',
                 injection_position: payload.injectionPosition || 'afterend',
@@ -1290,6 +1417,10 @@
         }
 
         initObserver() {
+            if (this.dwellObserver) {
+                this.dwellObserver.disconnect();
+            }
+
             const options = { threshold: 0.1 };
             this.dwellObserver = new IntersectionObserver((entries) => {
                 if (!this.isTrackingActive) return;
@@ -1472,8 +1603,18 @@
                     break;
             }
 
-            // Increment injection count
-            this.injectionCounts[intentType] = currentCount + 1;
+            // Increment injection count (only for new injections, not restores)
+            if (!uniqueId.endsWith('_r')) {
+                this.injectionCounts[intentType] = currentCount + 1;
+                try {
+                    localStorage.setItem('vi_injection_counts_' + this.siteId, JSON.stringify({
+                        counts: this.injectionCounts,
+                        timestamp: Date.now()
+                    }));
+                } catch (e) {
+                    console.warn('[Tracker] Failed to persist injection counts', e);
+                }
+            }
             this.injectionHistory.push({ id: uniqueId, type: mutationType, intent: intentType, timestamp: Date.now() });
             console.log(`[Tracker] Injected AI UI (${mutationType}) into ${injection_target_selector}, id: ${uniqueId}`);
         }
@@ -1536,13 +1677,7 @@
 
             const targetElement = document.querySelector(targetSelector);
             if (!targetElement) {
-                console.warn(`[Tracker] Inline inject: target not found: ${targetSelector}.`);
-                const isRestore = uniqueId.endsWith('_r');
-                if (!isRestore) {
-                    console.warn(`[Tracker] Falling back to body.`);
-                    // Fallback to standard inject at body
-                    this._handleInject(uniqueId, 'body', htmlPayload, scopedCss, jsPayload, priority);
-                }
+                console.warn(`[Tracker] Inline inject: target not found: ${targetSelector}. Skipping inline injection.`);
                 return;
             }
 
@@ -1550,6 +1685,9 @@
             host.id = `vi-ai-${uniqueId}`;
             host.setAttribute('data-vi-injection', uniqueId);
             host.setAttribute('data-vi-inline', 'true');
+            if (intent) host.setAttribute('data-vi-intent', intent);
+            host.setAttribute('data-vi-target', targetSelector);
+            host.setAttribute('data-vi-position', position);
             host.setAttribute('data-vi-fingerprint', `inline_inject|${targetSelector}|${position}|${(htmlPayload || '').substring(0, 150)}`);
             // Bug fix: store the original (pre-restore) ID so the live-push guard can find it
             if (originalId) {
