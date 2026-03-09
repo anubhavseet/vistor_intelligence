@@ -337,12 +337,16 @@
                                 if (settings.trackingStartDelay) CONFIG.startUpDelay = settings.trackingStartDelay;
                                 if (typeof settings.isUiInjectionEnabled !== 'undefined') CONFIG.isUiInjectionEnabled = settings.isUiInjectionEnabled;
                                 if (settings.maxInjectionsPerIntent && Array.isArray(settings.maxInjectionsPerIntent)) {
-                                    // Convert array to object map
-                                    const limitMap = {};
-                                    settings.maxInjectionsPerIntent.forEach(item => {
-                                        limitMap[item.intent] = item.limit;
-                                    });
-                                    CONFIG.maxInjectionsPerIntent = limitMap;
+                                    if (settings.maxInjectionsPerIntent.length > 0) {
+                                        // Use only the objects coming from the API, do not merge with defaults
+                                        const limitMap = {};
+                                        settings.maxInjectionsPerIntent.forEach(item => {
+                                            if (item && item.intent) {
+                                                limitMap[item.intent.toLowerCase()] = item.limit;
+                                            }
+                                        });
+                                        CONFIG.maxInjectionsPerIntent = limitMap;
+                                    }
                                 } else if (typeof settings.maxInjectionsPerIntent === 'number') {
                                     // Fallback for legacy number format
                                     CONFIG.maxInjectionsPerIntent = { 'general': settings.maxInjectionsPerIntent };
@@ -1535,7 +1539,7 @@
             } = payload;
 
             // Ensure intent is captured regardless of field name casing or position
-            const intentType = intent || payload.intent || 'general';
+            const intentType = (intent || payload.intent || 'general').toLowerCase();
             const uniqueId = injectionId || `vi_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
             // Content-based fingerprint for dedup (mutation type, selector, position, content snippet)
