@@ -12,27 +12,31 @@ const httpLink = createHttpLink({
     },
 });
 
-// WebSocket Link for subscriptions
-const wsLink = new GraphQLWsLink(
-    createClient({
-        url: import.meta.env.VITE_GRAPHQL_WS_URI || 'ws://localhost:4040/graphql',
-        connectionParams: () => {
-            const token = localStorage.getItem('auth-token');
-            return {
-                authorization: token ? `Bearer ${token}` : '',
-            };
-        },
-    })
-);
-
-// Auth link for HTTP requests
-const authLink = setContext((_, { headers }) => {
-    // Check if we're on an admin route - prioritize admin token
+function getActiveToken(): string | null {
     const isAdminRoute = window.location.pathname.startsWith('/hq');
     const adminToken = localStorage.getItem('admin-auth-token');
     const userToken = localStorage.getItem('auth-token');
-    const token = (isAdminRoute && adminToken) ? adminToken : userToken;
+    return (isAdminRoute && adminToken) ? adminToken : userToken;
+}
 
+// WebSocket client with lazy connection — reconnects with fresh token
+// when the socket is closed and a new subscription starts.
+const wsClient = createClient({
+    url: import.meta.env.VITE_GRAPHQL_WS_URI || 'ws://localhost:4040/graphql',
+    lazy: true,
+    connectionParams: () => {
+        const token = getActiveToken();
+        return {
+            authorization: token ? `Bearer ${token}` : '',
+        };
+    },
+});
+
+const wsLink = new GraphQLWsLink(wsClient);
+
+// Auth link for HTTP requests
+const authLink = setContext((_, { headers }) => {
+    const token = getActiveToken();
     return {
         headers: {
             ...headers,
@@ -51,11 +55,16 @@ const splitLink = split(
             definition.operation === 'subscription'
         );
     },
-    wsLink, // Use WebSocket for subscriptions
-    authLink.concat(httpLink), // Use HTTP for queries and mutations
+    wsLink,
+    authLink.concat(httpLink),
 );
 
 export const client = new ApolloClient({
     link: splitLink,
     cache: new InMemoryCache(),
 });
+
+// Restart the WS connection on auth changes so subscriptions use the current token.
+export function restartWsConnection() {
+    wsClient.terminate();
+}

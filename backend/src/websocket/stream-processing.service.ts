@@ -52,55 +52,57 @@ export class StreamProcessingService {
         userAgent: string,
         metadata?: any
     ): Promise<void> {
-        let session = await this.visitorSessionModel.findOne({ sessionId, siteId });
+        const ipHash = hashIP(ipAddress || '0.0.0.0');
+        const uaInfo = parseUserAgent(userAgent || '');
 
-        if (!session) {
-            const ipHash = hashIP(ipAddress || '0.0.0.0');
-            const uaInfo = parseUserAgent(userAgent || '');
-
-            // Quick local GeoIP lookup for immediate geo data
-            let initialGeo: any = undefined;
-            if (ipAddress && ipAddress !== '0.0.0.0') {
-                const geo = geoip.lookup(ipAddress);
-                if (geo) {
-                    initialGeo = {
-                        country: geo.country,
-                        region: geo.region,
-                        city: geo.city,
-                        lat: geo.ll ? geo.ll[0] : 0,
-                        lng: geo.ll ? geo.ll[1] : 0,
-                        timezone: geo.timezone,
-                        source: 'ip',
-                    };
-                }
+        let initialGeo: any = undefined;
+        if (ipAddress && ipAddress !== '0.0.0.0') {
+            const geo = geoip.lookup(ipAddress);
+            if (geo) {
+                initialGeo = {
+                    country: geo.country,
+                    region: geo.region,
+                    city: geo.city,
+                    lat: geo.ll ? geo.ll[0] : 0,
+                    lng: geo.ll ? geo.ll[1] : 0,
+                    timezone: geo.timezone,
+                    source: 'ip',
+                };
             }
+        }
 
-            session = await this.visitorSessionModel.create({
-                sessionId,
-                siteId,
-                ipHash,
-                userAgent,
-                deviceType: uaInfo.deviceType,
-                browser: uaInfo.browser,
-                os: uaInfo.os,
-                geo: initialGeo,
-                deviceFingerprint: metadata ? {
-                    renderer: metadata.renderer,
-                    hardwareConcurrency: metadata.hardwareConcurrency,
-                    deviceMemory: metadata.deviceMemory
-                } : undefined,
-                startedAt: new Date(),
-                isActive: true,
-                lastActivityAt: new Date(),
-                intentScore: 40, // Start as Researcher/Scanner baseline
-                intentCategory: 'Bouncer',
-                totalPageViews: 0,
-                pagesVisited: []
-            });
+        const result = await this.visitorSessionModel.findOneAndUpdate(
+            { sessionId, siteId },
+            {
+                $setOnInsert: {
+                    sessionId,
+                    siteId,
+                    ipHash,
+                    userAgent,
+                    deviceType: uaInfo.deviceType,
+                    browser: uaInfo.browser,
+                    os: uaInfo.os,
+                    geo: initialGeo,
+                    deviceFingerprint: metadata ? {
+                        renderer: metadata.renderer,
+                        hardwareConcurrency: metadata.hardwareConcurrency,
+                        deviceMemory: metadata.deviceMemory
+                    } : undefined,
+                    startedAt: new Date(),
+                    isActive: true,
+                    lastActivityAt: new Date(),
+                    intentScore: 40,
+                    intentCategory: 'Bouncer',
+                    totalPageViews: 0,
+                    pagesVisited: [],
+                },
+            },
+            { upsert: true, new: true, rawResult: true },
+        );
 
-            // Queue enrichment job for enhanced data (organization, VPN flags, etc.)
+        if (result) {
             await this.enrichmentQueue.add({
-                sessionId: session._id.toString(),
+                sessionId: result._id.toString(),
                 ipAddress: ipAddress,
             }).catch(() => { });
         }

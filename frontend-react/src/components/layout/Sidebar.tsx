@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Globe, Settings, LogOut, Code, Puzzle, BarChart3, LineChart, ChevronLeft, ChevronRight, AmpersandIcon, CreditCard } from "lucide-react";
 import { cn } from "../../lib/utils";
-import { useAuthStore } from "@/store/auth-store";
+import { useAuth } from "@/hooks/use-auth";
 
 interface SidebarProps {
     isCollapsed: boolean;
@@ -9,7 +9,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isCollapsed, toggle }: SidebarProps) {
-    const { logout } = useAuthStore()
+    const { logout } = useAuth()
     const location = useLocation()
 
     type NavigationItem = {

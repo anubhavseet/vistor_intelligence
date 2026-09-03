@@ -44,15 +44,27 @@ export class WebhookController {
 
         const razorpaySubId = subscriptionEntity?.id;
 
-        // Idempotency check: see if we already processed this exact event
-        const existingEvent = await this.webhookEventModel.findOne({ eventId });
-        if (existingEvent) {
-            this.logger.log(`Webhook event ${eventId} already processed (status: ${existingEvent.status}). Ignoring duplicate.`);
-            res.status(200).json({ status: 'duplicate_ignored' });
-            return;
-        }
-
         this.logger.log(`Webhook received: ${event} for subscription ${razorpaySubId || 'Unknown'}`);
+
+        // Atomic idempotency gate: insert the record FIRST with status 'processing'.
+        // The unique index on eventId rejects duplicates with E11000, so only one
+        // concurrent request can proceed past this point.
+        try {
+            await this.webhookEventModel.create({
+                eventId,
+                eventType: event,
+                razorpaySubId,
+                rawPayload: payload,
+                status: 'processing',
+            });
+        } catch (err: any) {
+            if (err.code === 11000) {
+                this.logger.log(`Webhook event ${eventId} already claimed. Ignoring duplicate.`);
+                res.status(200).json({ status: 'duplicate_ignored' });
+                return;
+            }
+            throw err;
+        }
 
         try {
             switch (event) {
@@ -63,7 +75,6 @@ export class WebhookController {
                     await this.subscriptionService.handleSubscriptionActivated(razorpaySubId, subscriptionEntity);
                     break;
                 case 'subscription.updated':
-                    // Dedicated handler for plan changes (separate from activation)
                     await this.subscriptionService.handleSubscriptionUpdated(razorpaySubId, subscriptionEntity);
                     break;
                 case 'subscription.charged':
@@ -92,42 +103,30 @@ export class WebhookController {
                     await this.subscriptionService.handleSubscriptionPending(razorpaySubId);
                     break;
                 case 'invoice.paid':
-                    // Invoices carry the subscription ID too
                     await this.subscriptionService.handleInvoicePaid(payload?.payload?.invoice?.entity);
                     break;
                 default:
                     this.logger.log(`Unhandled webhook event: ${event}`);
             }
 
-            // Write idempotency record BEFORE sending 200 — prevents duplicate processing if
-            // the process crashes between response and DB write (Bug 2 fix).
-            await this.webhookEventModel.create({
-                eventId,
-                eventType: event,
-                razorpaySubId,
-                rawPayload: payload,
-                status: 'processed',
-            });
+            await this.webhookEventModel.updateOne(
+                { eventId },
+                { status: 'processed' },
+            );
 
             res.status(200).json({ status: 'ok' });
         } catch (error: any) {
             this.logger.error(`Webhook processing error for event ${eventId}: ${error.message}`);
 
-            // Log failed processing (best-effort — do not throw if this write also fails)
             try {
-                await this.webhookEventModel.create({
-                    eventId,
-                    eventType: event,
-                    razorpaySubId,
-                    rawPayload: payload,
-                    status: 'failed',
-                    errorReason: error.message,
-                });
+                await this.webhookEventModel.updateOne(
+                    { eventId },
+                    { status: 'failed', errorReason: error.message },
+                );
             } catch (logErr: any) {
-                this.logger.error(`Failed to write webhook failure log: ${logErr.message}`);
+                this.logger.error(`Failed to update webhook failure status: ${logErr.message}`);
             }
 
-            // Return 200 to prevent Razorpay retries for logic errors
             res.status(200).json({ status: 'error', message: error.message });
         }
     }

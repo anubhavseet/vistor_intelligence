@@ -31,7 +31,7 @@ import { SubscriptionModule } from './subscription/subscription.module';
     }),
 
     // MongoDB
-    MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://localhost:27017/visitor-intelligence', {
+    MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://root:password123@localhost:27017/visitor-intelligence', {
       connectionFactory: (connection) => {
         connection.on('connected', () => {
           console.log('✅ MongoDB connected');
@@ -67,6 +67,7 @@ import { SubscriptionModule } from './subscription/subscription.module';
     // BullMQ for background jobs
     BullModule.forRoot({
       redis: {
+
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379', 10),
       },

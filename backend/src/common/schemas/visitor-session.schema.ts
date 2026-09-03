@@ -131,6 +131,9 @@ VisitorSessionSchema.index({ accountId: 1, startedAt: -1 });
 VisitorSessionSchema.index({ 'geo.country': 1 });
 VisitorSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
+// Unique index to prevent duplicate sessions (race condition fix)
+VisitorSessionSchema.index({ sessionId: 1, siteId: 1 }, { unique: true });
+
 // New indexes for analytics
 VisitorSessionSchema.index({ siteId: 1, ipHash: 1, startedAt: 1 });
 VisitorSessionSchema.index({ 'geo': '2dsphere' });

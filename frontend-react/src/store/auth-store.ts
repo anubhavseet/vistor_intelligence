@@ -24,19 +24,10 @@ export const useAuthStore = create<AuthState>()(
             setAuth: (token: string, user: User) => {
                 localStorage.setItem('auth-token', token)
                 set({ token, user })
-                // Trigger storage event for other tabs/windows
-                if (typeof window !== 'undefined') {
-                    window.dispatchEvent(new Event('storage'))
-                }
             },
             logout: () => {
                 localStorage.removeItem('auth-token')
                 set({ token: null, user: null })
-                // Trigger storage event to notify other parts of the app
-                if (typeof window !== 'undefined') {
-                    window.dispatchEvent(new Event('storage'))
-                    // Optional: Clear Apollo cache here or in a listener
-                }
             },
             isAuthenticated: () => {
                 return !!get().token
@@ -44,7 +35,16 @@ export const useAuthStore = create<AuthState>()(
         }),
         {
             name: 'auth-storage',
-            // Ensure we use localStorage consistently
         }
     )
 )
+
+// Cross-tab sync: native 'storage' event fires in OTHER tabs when localStorage
+// changes, so logging out in one tab automatically logs out all others.
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'auth-token' && e.newValue === null) {
+            useAuthStore.getState().logout()
+        }
+    })
+}
